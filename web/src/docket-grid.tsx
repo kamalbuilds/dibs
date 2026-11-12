@@ -3,6 +3,7 @@ import { AgGridReact } from "ag-grid-react";
 import { themeQuartz, type ColDef, type ColGroupDef, type GetRowIdParams, type GridReadyEvent, type ICellRendererParams, type IRowNode, type ITooltipParams, type SelectionChangedEvent } from "ag-grid-community";
 import { ArrowUp, BellRing, Download, RotateCcw, ShieldCheck, X } from "lucide-react";
 import { at, money } from "./format.ts";
+import { SOLD_STATUSES, soldAnnouncement, soldTransitions } from "./live-status.ts";
 
 /* Minimal shapes the docket needs; main.tsx passes its richer records straight through. */
 type Comps = { status: "ok" | "none" | "error"; count?: number; medianCents?: number; sources?: Array<{ domain: string; priceCents: number }> } | null | undefined;
@@ -97,6 +98,25 @@ export function DocketGrid({ data, compsReady, live, renderPhoto, renderStatus, 
   const rows = useMemo(() => buildDocketRows(data), [data]);
   const filterRef = useRef<Filter>("all"); filterRef.current = filter;
 
+  // Live sale: when a row flips to paid (SSE invoice_paid → reload), flash the whole row and announce the sale.
+  const previousStatus = useRef<Map<string, string> | null>(null);
+  const soldTimer = useRef<number | undefined>(undefined);
+  const [soldNote, setSoldNote] = useState<string | null>(null);
+  useEffect(() => {
+    const changes = soldTransitions(previousStatus.current, rows);
+    previousStatus.current = new Map(rows.map((row) => [row.id, row.status]));
+    if (!changes.length) return;
+    setSoldNote(soldAnnouncement(changes));
+    window.clearTimeout(soldTimer.current);
+    soldTimer.current = window.setTimeout(() => setSoldNote(null), 8000);
+    const flash = window.setTimeout(() => {
+      const api = grid.current?.api;
+      const nodes = changes.map((change) => api?.getRowNode(change.id)).filter((node): node is IRowNode<DocketRow> => !!node);
+      if (api && nodes.length) api.flashCells({ rowNodes: nodes, flashDuration: 1600, fadeDuration: 1400 });
+    }, 60);
+    return () => window.clearTimeout(flash);
+  }, [rows]);
+
   const totals = useMemo(() => data.invoices.filter((invoice) => invoice.status !== "CANCELLED").reduce((sum, invoice) => ({ subtotal: sum.subtotal + invoice.subtotal_cents, shipping: sum.shipping + invoice.shipping_cents, fee: sum.fee + invoice.fee_cents, total: sum.total + invoice.total_cents }), { subtotal: 0, shipping: 0, fee: 0, total: 0 }), [data]);
   const pinnedBottomRowData = useMemo(() => [{ id: "totals", number: "TOTALS", title: "Invoice totals", buyer: "", claimed: "", backup: null, status: "", due: "", ...totals }], [totals]);
   const hideComps = !compsReady;
@@ -161,13 +181,14 @@ export function DocketGrid({ data, compsReady, live, renderPhoto, renderStatus, 
     </div>
     <div className="docket-filters" role="toolbar" aria-label="Filter by status">{FILTERS.map(([key, label, test]) => <button type="button" key={key} aria-pressed={filter === key} className={`filter-chip ${filter === key ? "is-on" : ""} ${key === "rolled" ? "filter-chip-rolled" : ""}`} onClick={() => setStatusFilter(key)}>{label}<b>{rows.filter(test).length}</b></button>)}</div>
     {selected.length > 0 && <div className="bulk-bar" role="region" aria-label="Bulk actions"><strong>{selected.length} selected</strong><button type="button" className="tool-button tool-button-dark" disabled={!remindable.length} onClick={() => onRemind(remindable)}><BellRing size={13} aria-hidden="true"/>Remind {remindable.length} unpaid</button><button type="button" className="tool-button" onClick={() => exportCsv(true)}><Download size={13} aria-hidden="true"/>Export selected</button><button type="button" className="tool-button tool-button-plain" onClick={() => grid.current?.api.deselectAll()}><X size={13} aria-hidden="true"/>Clear</button></div>}
+    <p className={`sold-note ${soldNote ? "is-on" : ""}`} role="status" aria-live="polite">{soldNote ? <><ShieldCheck size={14} aria-hidden="true"/><span>Paid on PayPal: {soldNote}</span></> : null}</p>
     <div className="grid-wrap docket-grid">
       <AgGridReact<DocketRow> ref={grid} theme={docketTheme} rowData={rows} columnDefs={columnDefs} getRowId={(p: GetRowIdParams<DocketRow>) => p.data.id}
         defaultColDef={{ sortable: true, resizable: true, filter: true, suppressHeaderMenuButton: true, enableCellChangeFlash: true }}
         rowSelection={{ mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: false }} selectionColumnDef={{ width: 44, pinned: narrow ? null : "left", resizable: false }}
         onSelectionChanged={(event: SelectionChangedEvent<DocketRow>) => setSelected(event.api.getSelectedRows())}
         isExternalFilterPresent={() => filterRef.current !== "all"} doesExternalFilterPass={(node) => !!node.data && FILTERS.find(([key]) => key === filterRef.current)![2](node.data)}
-        rowClassRules={{ "row-rolled": (p) => !!p.data?.rolledFrom, "row-due-soon": (p) => !!p.data?.due && UNPAID.has(p.data.status) && p.data.due - Date.now() < 3_600_000 }}
+        rowClassRules={{ "row-sold": (p) => !!p.data && SOLD_STATUSES.has(p.data.status), "row-rolled": (p) => !!p.data?.rolledFrom, "row-due-soon": (p) => !!p.data?.due && UNPAID.has(p.data.status) && p.data.due - Date.now() < 3_600_000 }}
         rowHeight={52} headerHeight={38} floatingFiltersHeight={34} domLayout="autoHeight" quickFilterText={quick} pinnedBottomRowData={pinnedBottomRowData}
         animateRows tooltipShowDelay={250} tooltipInteraction={false} suppressDragLeaveHidesColumns
         onColumnMoved={saveColumns} onColumnResized={(e) => e.finished && saveColumns()} onSortChanged={saveColumns} onColumnVisible={saveColumns} onGridReady={onGridReady}

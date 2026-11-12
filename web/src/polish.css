@@ -215,3 +215,10 @@
 @keyframes pocket-roll { 50% { box-shadow: 0 0 0 5px rgb(215 38 30 / 28%); } }
 @media (max-width: 700px) { .live-ticker { top: 64px; left: 12px; right: 12px; width: auto; } }
 .live-note em { font-style: normal; min-width: 0; }
+
+/* Live sale on the docket: a paid row reads SOLD, flashes once, and is announced. */
+.status-sold { color: #fffefa; background: var(--green); border-color: var(--green); }
+.docket-grid .row-sold { background: color-mix(in srgb, var(--green) 7%, transparent); }
+.docket-grid .ag-cell-data-changed { background: color-mix(in srgb, var(--green) 34%, transparent) !important; }
+.sold-note { display: flex; align-items: center; gap: 8px; min-height: 0; margin: 0; padding: 0 12px; max-height: 0; overflow: hidden; opacity: 0; color: var(--green); font-weight: 600; font-size: 13px; transition: max-height .25s ease, opacity .25s ease, padding .25s ease; }
+.sold-note.is-on { max-height: 48px; opacity: 1; padding: 8px 12px; margin-bottom: 8px; border: 1px solid var(--green); border-radius: 6px; background: color-mix(in srgb, var(--green) 8%, transparent); }

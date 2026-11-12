@@ -77,7 +77,7 @@ const statusMeta: Record<string, { label: string; Icon: LucideIcon }> = {
   OPEN: { label: "Open", Icon: Circle }, CLAIMED: { label: "Claimed", Icon: Hand }, INVOICED: { label: "Invoiced", Icon: FileText },
   DRAFT: { label: "Drafting", Icon: FileText }, SENT: { label: "Invoice sent", Icon: FileText }, UNPAID: { label: "Unpaid", Icon: FileText },
   HELD: { label: "Held", Icon: Lock }, PAID: { label: "Paid", Icon: BadgeCheck }, MARKED_AS_PAID: { label: "Paid", Icon: BadgeCheck },
-  SHIPPED: { label: "Shipped", Icon: Truck }, CANCELLED: { label: "Passed", Icon: Ban }, FAILED: { label: "Failed", Icon: Ban },
+  SOLD: { label: "Sold · paid", Icon: BadgeCheck }, SHIPPED: { label: "Shipped", Icon: Truck }, CANCELLED: { label: "Passed", Icon: Ban }, FAILED: { label: "Failed", Icon: Ban },
 };
 
 function StatusChip({ value }: { value?: string | null }) {
@@ -246,6 +246,8 @@ function Dashboard() {
   const load = useCallback(async () => { try { setData(await api(`/api/sales/${saleId}`, {}, accessKey)); setError(""); } catch (err) { setError(err instanceof Error ? err.message : "Could not load sale"); } }, [saleId, accessKey]);
   useEffect(() => { void load(); }, [load]);
   const live = useSaleEvents(saleId, useCallback(() => void load(), [load]));
+  // Backstop when the event stream is down: reload every 5 seconds so PAID still lands without a manual refresh.
+  useEffect(() => { if (live === "connected") return; const timer = window.setInterval(() => void load(), 5000); return () => window.clearInterval(timer); }, [live, load]);
   async function replacePhoto(item: Item, file: File) {
     try { await uploadItemPhoto(item.id, file, accessKey); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Could not save photo"); }
   }
@@ -256,7 +258,7 @@ function Dashboard() {
   const remindMany = useCallback(async (ids: string[]) => { try { for (const id of ids) await api(`/api/invoices/${id}/remind`, { method: "POST" }, accessKey); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Invoice action failed"); } }, [accessKey, load]);
   const passInvoice = useCallback((id: string) => void invoiceAction(id, "cancel"), [accessKey, load]); // eslint-disable-line react-hooks/exhaustive-deps
   const renderPhoto = useCallback((item: Item) => <PhotoPicker item={item} onPick={(row, file) => void replacePhoto(row, file)}><ItemArt item={item} className="grid-art"/></PhotoPicker>, [accessKey, load]); // eslint-disable-line react-hooks/exhaustive-deps
-  const renderStatus = useCallback((value: string) => <StatusChip value={value}/>, []);
+  const renderStatus = useCallback((value: string) => <StatusChip value={value === "PAID" || value === "MARKED_AS_PAID" ? "SOLD" : value}/>, []);
   const renderDue = useCallback((due: number) => <Countdown due={due}/>, []);
   const openShip = useCallback((invoice: Invoice) => setShip(invoice), []);
   const docketRows = useMemo(() => data ? buildDocketRows(data) : [], [data]);
