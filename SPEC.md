@@ -1,6 +1,6 @@
 # Dibs: claim sales that invoice themselves
 
-Read first: `docs/COMMON-SPEC.md`, `docs/PAYPAL-API.md` (copied into this repo).
+PayPal API reference: `docs/PAYPAL-API.md`.
 
 ## Who
 Card, comic and retro game sellers who run "claim sales" on X, Instagram and Discord. Verbatim from a seller's pinned rules (x.com/TrollBJ0RN/status/2120295558904709295): "Drop a 'Claim' or 'Mine' + card name", "The timestamp on my screen is the absolute final judge", "Payment is due within 24 hours of receiving your invoice DM", "cards immediately go to the backup claimer", "PayPal (F&F)". Today every step is manual and most take Friends & Family, which voids PayPal protection for both sides; the Goods & Services fee is a constant fight ("G&S add 3%").
