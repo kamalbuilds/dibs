@@ -105,7 +105,7 @@ export function DocketGrid({ data, compsReady, live, renderPhoto, renderStatus, 
   const columnDefs = useMemo<Array<ColDef<DocketRow> | ColGroupDef<DocketRow>>>(() => [
     { headerName: "Item", marryChildren: true, children: [
       { field: "number", headerName: "#", width: 62, filter: false, cellClass: "cell-mono cell-number" },
-      { field: "photo", headerName: "Photo", width: 60, sortable: false, filter: false, cellClass: "cell-photo", cellRenderer: (p: ICellRendererParams<DocketRow>) => p.data?.item ? renderPhoto(p.data.item) : "" },
+      { field: "photo", headerName: "Photo", width: 72, sortable: false, filter: false, cellClass: "cell-photo", cellRenderer: (p: ICellRendererParams<DocketRow>) => p.data?.item ? renderPhoto(p.data.item) : "" },
       { field: "title", headerName: "Name", minWidth: 150, flex: 1, wrapText: true, autoHeight: true, cellClass: "cell-name", filter: "agTextColumnFilter", floatingFilter: true, tooltipField: "title" },
       { field: "comps", headerName: "Comps", width: 100, hide: hideComps, filter: false, comparator: (a: Comps, b: Comps) => (a?.medianCents ?? -1) - (b?.medianCents ?? -1),
         tooltipValueGetter: (p: ITooltipParams<DocketRow>) => p.data?.comps?.status === "ok" ? p.data.comps.sources?.map((s) => `${s.domain} ${money(s.priceCents)}`).join("\n") : undefined,
