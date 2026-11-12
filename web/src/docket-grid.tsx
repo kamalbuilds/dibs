@@ -171,7 +171,8 @@ export function DocketGrid({ data, compsReady, live, renderPhoto, renderStatus, 
         rowHeight={52} headerHeight={38} floatingFiltersHeight={34} domLayout="autoHeight" quickFilterText={quick} pinnedBottomRowData={pinnedBottomRowData}
         animateRows tooltipShowDelay={250} tooltipInteraction={false} suppressDragLeaveHidesColumns
         onColumnMoved={saveColumns} onColumnResized={(e) => e.finished && saveColumns()} onSortChanged={saveColumns} onColumnVisible={saveColumns} onGridReady={onGridReady}
-        overlayNoRowsTemplate="<span class='grid-empty'>No pockets match this filter.</span>" />
+        suppressNoRowsOverlay />
+      {!rows.length && <p className="grid-empty-state">No pockets yet. Add items from the new-sale page and publish to start the register.</p>}
     </div>
     <p className="grid-hint">Tip: tick rows to remind or export in bulk · drag headers to reorder (saved on this device) · hover Backup for the queue.</p>
   </>;
