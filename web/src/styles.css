@@ -134,7 +134,6 @@ h1 { margin: 7px 0 12px; font: 500 43px/1 var(--font-display); letter-spacing: -
 .quick-filter { display: flex; align-items: center; gap: 8px; color: var(--secondary); font: 11px var(--font-body); letter-spacing: 0; }
 .quick-filter input { width: 190px; min-height: 30px; padding: 5px 8px; font-size: 11px; }
 .grid-wrap { width: 100%; height: min(52vh, 530px); min-height: 340px; background: var(--panel); border-bottom: 1px solid var(--rule); }
-.ag-theme-quartz { --ag-borders: solid 1px; --ag-wrapper-border-radius: 0px; --ag-header-column-separator-display: block; --ag-header-column-separator-color: #d8d2c7; --ag-header-column-separator-height: 45%; --ag-row-border-color: #e4dfd6; --ag-cell-horizontal-padding: 10px; --ag-input-focus-border-color: #154e75; }
 .ag-header-group-cell { font: 600 10px var(--font-body); letter-spacing: .04em; text-transform: uppercase; }
 .ag-header-cell { color: var(--secondary); font-size: 10px; }
 .ag-cell { display: flex; align-items: center; }

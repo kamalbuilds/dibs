@@ -3,8 +3,6 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { AllCommunityModule, ModuleRegistry, type ICellRendererParams } from "ag-grid-community";
 import { Archive, ArrowDownToLine, ArrowUpRight, BadgeCheck, Ban, Camera, Check, ChevronRight, Circle, CircleHelp, Clock3, FileText, Hand, ImagePlus, LoaderCircle, Lock, Plus, Radio, Settings2, ShieldCheck, Truck, Undo2, ArrowUp, X, type LucideIcon } from "lucide-react";
-import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-quartz.css";
 import "./styles.css";
 import { at, dateTime, describeEvent, money } from "./format.ts";
 import { ClaimConfirmation, ClaimSheet, LiveTicker, type ClaimResult, type LiveNote } from "./claim-ui.tsx";
