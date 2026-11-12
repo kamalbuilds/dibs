@@ -45,6 +45,71 @@ Dibs uses PayPal Invoicing v2 for invoice creation (including deposit invoices w
 
 **Price comps from Channel3.** After the AI itemizes a photo, Dibs searches Channel3 for each item by its AI-read title and shows real store listings in the review grid and the docket: lowest, median, and up to three source links in USD. Listings whose titles do not name the item and Tukey outliers are left out, an empty search reads "No comps", and **Use median** fills the price for the seller to confirm. Set `CHANNEL3_API_KEY` to turn it on; **Price comps** on the docket reruns a whole sale.
 
+## Claim from an AI assistant (MCP)
+
+Dibs ships an MCP server so Claude Desktop, Claude Code, Cursor, or any MCP client can run a claim end to end: read the binder, claim pockets for the buyer, and follow the PayPal invoice. It is a thin layer over the same HTTP API the binder uses, so every rule (claim deadline, duplicate claims, timestamp order, backups, PayPal invoicing and rollover) is still decided by the Dibs server.
+
+| Tool | What it does |
+| --- | --- |
+| `list_sale` | Sale slug or link → every pocket with number, title, price, status, whether it can be claimed, backup count, photo URL, and the deadline. Read-only. |
+| `claim` | Sale, pocket numbers (or a claim comment such as `mine 3 and 7`), handle, email, optional deposit hold → **First** or **Backup N** per pocket with the server timestamp, any invoice already issued, and what happens next with the PayPal invoice. |
+| `invoice_status` | Invoice id, or sale + handle → PayPal state, total with item/shipping/fee lines, deposit, due time, pay link, tracking, and whether an unpaid item rolled to a backup. |
+
+It also exposes a `dibs://sale/{slug}` resource and a `claim_from_post` prompt (paste a seller's X / Instagram / Discord post and what you want).
+
+Environment:
+
+- `DIBS_BASE_URL`: Dibs instance to talk to. Defaults to `https://dibs-claims.fly.dev`.
+- `DIBS_SELLER_KEY` (optional): a sale's seller key. Adds buyer handles to `list_sale` queues and lets `invoice_status` look up any buyer by handle. Buyers never need it; without it `invoice_status` works by invoice id or for invoices claimed in the same session.
+
+Run it:
+
+```sh
+npm install
+npm run mcp            # stdio, from source
+npm run mcp:http       # Streamable HTTP at http://127.0.0.1:8790/mcp (stateless)
+npm run build && npm run mcp:start   # stdio from dist/mcp/main.js
+node scripts/mcp-smoke.mjs list_sale '{"sale":"kJ4emW4"}'   # spawn the server and call a tool
+```
+
+**Claude Desktop** (`claude_desktop_config.json`, after `npm run build`):
+
+```json
+{
+  "mcpServers": {
+    "dibs": {
+      "command": "node",
+      "args": ["/absolute/path/to/dibs/dist/mcp/main.js"],
+      "env": { "DIBS_BASE_URL": "https://dibs-claims.fly.dev" }
+    }
+  }
+}
+```
+
+**Claude Code:**
+
+```sh
+claude mcp add dibs -e DIBS_BASE_URL=https://dibs-claims.fly.dev -- node /absolute/path/to/dibs/dist/mcp/main.js
+```
+
+**Cursor** (`.cursor/mcp.json` in this repo, or `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "dibs": {
+      "command": "node",
+      "args": ["${workspaceFolder}/dist/mcp/main.js"],
+      "env": { "DIBS_BASE_URL": "https://dibs-claims.fly.dev" }
+    }
+  }
+}
+```
+
+Or point any client that speaks Streamable HTTP at a running `npm run mcp:http`: `{ "mcpServers": { "dibs": { "url": "http://127.0.0.1:8790/mcp" } } }`.
+
+[docs/mcp-demo.md](docs/mcp-demo.md) has a 30-second demo script against the live sale.
+
 ## Render
 
 Create a Render web service from this repository using `render.yaml`. Configure PayPal sandbox credentials and `OPENROUTER_API_KEY` in the service environment. Render mounts persistent SQLite storage at `/var/data`.
