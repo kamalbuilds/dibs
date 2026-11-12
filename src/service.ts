@@ -434,3 +434,51 @@ export function saleOpenItems(saleId: string) { return unclaimedItems(saleId); }
 export function saleInvoices(saleId: string) { return listInvoices(saleId); }
 export function salePublicBySlug(slug: string) { return publicSale(slug); }
 export function saleSellerById(id: string) { return sellerSale(id); }
+
+// Buyer-triggered read of one invoice straight from PayPal Invoicing v2 (GET /v2/invoicing/invoices/:id),
+// applying the same paid / deposit / cancelled transitions as the webhook. Deadline rollovers stay with the reconciler.
+export async function refreshInvoiceFromPayPal(invoiceId: string): Promise<{ invoice: InvoiceRow; checked: boolean; remoteStatus: string | null }> {
+  const invoice = getInvoice(invoiceId);
+  if (!invoice) throw new Error("Invoice not found");
+  const configured = !!process.env.PAYPAL_CLIENT_ID && !!process.env.PAYPAL_CLIENT_SECRET;
+  if (!configured || !invoice.paypal_invoice_id || !["SENT", "UNPAID", "HELD"].includes(invoice.status)) return { invoice, checked: false, remoteStatus: null };
+  const remote = await paypalRead(invoice.paypal_invoice_id);
+  if (remote.status === "PAID" || remote.status === "MARKED_AS_PAID") await markPaid(invoice);
+  else if (remote.status === "PARTIALLY_PAID") markHeld(invoice);
+  else if (remote.status === "CANCELLED") await markCancelled(invoice);
+  return { invoice: getInvoice(invoiceId)!, checked: true, remoteStatus: remote.status };
+}
+
+export type PaymentRequirement = {
+  status: "payment_required" | "pending_invoice" | "paid" | "backup_waiting";
+  httpStatusEquivalent: 402 | 202 | 200;
+  amount: { value: string; currency: string } | null;
+  amountDueNow: { value: string; currency: string } | null;
+  invoiceId: string | null;
+  paypalInvoiceId: string | null;
+  payUrl: string | null;
+  expiresAt: string | null;
+  invoiceExpectedAt: string | null;
+  message: string;
+};
+
+const usdAmount = (cents: number) => ({ value: (cents / 100).toFixed(2), currency: "USD" });
+
+// The 402-style "payment required" summary of a claim. Only real invoice rows are reported; nothing is invented.
+export function paymentRequirement(sale: SaleRow, claims: ClaimRow[], invoices: Array<InvoiceRow & { items: Array<{ id: string }> }>): PaymentRequirement {
+  const won = new Set(claims.filter((claim) => claim.kind === "claim").map((claim) => claim.item_id));
+  const base = { amount: null, amountDueNow: null, invoiceId: null, paypalInvoiceId: null, payUrl: null, expiresAt: null, invoiceExpectedAt: null };
+  if (!won.size) return { ...base, status: "backup_waiting", httpStatusEquivalent: 202, message: "You are a backup. Nothing to pay unless the buyer ahead passes; then Dibs sends you a PayPal invoice." };
+  const mine = invoices.filter((invoice) => invoice.status !== "CANCELLED" && invoice.items.some((item) => won.has(item.id)));
+  const open = mine.find((invoice) => ["SENT", "UNPAID", "HELD"].includes(invoice.status) && invoice.payer_url);
+  if (open) {
+    const held = open.status === "HELD";
+    return { ...base, status: "payment_required", httpStatusEquivalent: 402, amount: usdAmount(open.total_cents), amountDueNow: open.deposit_cents && !held ? usdAmount(open.deposit_cents) : usdAmount(open.total_cents), invoiceId: open.id, paypalInvoiceId: open.paypal_invoice_id, payUrl: open.payer_url, expiresAt: new Date(open.due_at_ms).toISOString(),
+      message: held ? "Deposit received; pay the balance on the PayPal invoice." : "Pay the PayPal Goods & Services invoice before it expires, or the item rolls to the next backup." };
+  }
+  const paid = mine.find((invoice) => ["PAID", "MARKED_AS_PAID"].includes(invoice.status));
+  if (paid) return { ...base, status: "paid", httpStatusEquivalent: 200, amount: usdAmount(paid.total_cents), invoiceId: paid.id, paypalInvoiceId: paid.paypal_invoice_id, payUrl: paid.payer_url, message: "Paid on PayPal." };
+  if (sale.invoice_mode === "sale_close") return { ...base, status: "pending_invoice", httpStatusEquivalent: 202, invoiceExpectedAt: new Date(sale.closes_at_ms).toISOString(), message: "No invoice yet: this sale sends one PayPal invoice per buyer when claims close (or earlier if the seller closes the sale)." };
+  const draft = mine[0];
+  return { ...base, status: "pending_invoice", httpStatusEquivalent: 202, invoiceId: draft?.id ?? null, message: "The PayPal invoice is still being created; Dibs retries every 15 seconds. Check again shortly." };
+}

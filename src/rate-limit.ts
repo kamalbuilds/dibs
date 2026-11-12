@@ -38,3 +38,7 @@ const envNumber = (name: string, fallback: number) => {
 export const claimWindowMs = () => envNumber("CLAIM_RATE_WINDOW_MS", 60_000);
 export const claimLimitPerIp = new SlidingWindowLimiter(() => envNumber("CLAIM_RATE_PER_IP", 30), claimWindowMs);
 export const claimLimitPerHandle = new SlidingWindowLimiter(() => envNumber("CLAIM_RATE_PER_HANDLE", 10), claimWindowMs);
+
+// Payment status refresh: one PayPal read per invoice per 3 seconds, 60 status checks a minute per client IP.
+export const refreshLimitPerInvoice = new SlidingWindowLimiter(() => 1, () => envNumber("INVOICE_REFRESH_MIN_INTERVAL_MS", 3_000));
+export const refreshLimitPerIp = new SlidingWindowLimiter(() => envNumber("INVOICE_REFRESH_PER_IP", 60), () => 60_000);
