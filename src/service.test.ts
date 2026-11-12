@@ -70,3 +70,18 @@ describe("comps without a Channel3 key", () => {
     } finally { if (saved !== undefined) process.env.CHANNEL3_API_KEY = saved; }
   });
 });
+
+const { extendDeadline } = await import("./service.js");
+
+describe("deadline extension", () => {
+  it("moves an open sale's close later and keeps it off the closing list", () => {
+    const { sale } = createNewSale({ title: "Judge demo", deadlineMinutes: 60, ...rules, invoiceMode: "sale_close" });
+    addSaleItem(sale.id, { title: "Hound card", priceCents: 700 });
+    publish(sale.id);
+    const until = Date.parse("2026-12-21T00:00:00Z");
+    expect(extendDeadline(sale.id, until).closes_at_ms).toBe(until);
+    expect(listSalesToClose(until - 1).some((row) => row.id === sale.id)).toBe(false);
+    expect(listSalesToClose(until).some((row) => row.id === sale.id)).toBe(true);
+    expect(() => extendDeadline(sale.id, Date.now() - 1000)).toThrow(/later/);
+  });
+});

@@ -4,7 +4,7 @@ import {
   addClaim, addEvent, addItem, addOperation, addShipment, buyerClaims, closeSale, createInvoice, createSale, deleteItem, getInvoice, getInvoiceByPayPal,
   getItem, getSaleById, getSaleBySlug, invoiceItems, listClaims, listEvents, listInvoices, listItemClaims, listItems, listOutstandingInvoices,
   listDraftInvoices, listSalesToClose, matchesOwnerKey, markInvoiceCancelled, markInvoiceHeld, markInvoicePaid, nextBackup, nextClaimSequence, publishSale, unbilledClaimCount, unclaimedItems, updateInvoice,
-  archiveSale, setItemComps, setItemPhoto, updateItem, updateItemStatus, updateOperation, type ClaimRow, type EventRow, type InvoiceRow, type ItemRow, type SaleRow,
+  archiveSale, setSaleCloses, setItemComps, setItemPhoto, updateItem, updateItemStatus, updateOperation, type ClaimRow, type EventRow, type InvoiceRow, type ItemRow, type SaleRow,
 } from "./store.js";
 import { removeItemPhoto, saveItemPhoto } from "./photos.js";
 import { compsConfigured, fetchComps, type Comps } from "./comps.js";
@@ -93,6 +93,16 @@ export function archive(saleId: string): SaleRow {
     archiveSale(saleId);
     event(saleId, "sale_archived", { title: sale.title });
   }
+  return getSaleById(saleId)!;
+}
+
+// Operator path (scripts/extend-sale.mjs): keeps a standing sale open past its original window.
+export function extendDeadline(saleId: string, closesAtMs: number): SaleRow {
+  const sale = getSaleById(saleId);
+  if (!sale || sale.status !== "OPEN" || sale.archived_at_ms) throw new Error("Only an open sale can be extended");
+  if (!(closesAtMs > Math.max(Date.now(), sale.closes_at_ms))) throw new Error("New deadline must be later than the current one");
+  setSaleCloses(saleId, closesAtMs);
+  event(saleId, "deadline_extended", { fromMs: sale.closes_at_ms, toMs: closesAtMs });
   return getSaleById(saleId)!;
 }
 

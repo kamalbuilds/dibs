@@ -222,6 +222,10 @@ export function setItemComps(itemId: string, comps: unknown): void {
   db.prepare("UPDATE items SET comps_json=? WHERE id=?").run(JSON.stringify(comps), itemId);
 }
 
+export function setSaleCloses(saleId: string, closesAtMs: number): void {
+  db.prepare("UPDATE sales SET closes_at_ms=? WHERE id=? AND status='OPEN'").run(closesAtMs, saleId);
+}
+
 export function archiveSale(saleId: string): void {
   db.prepare("UPDATE sales SET archived_at_ms=? WHERE id=? AND archived_at_ms IS NULL").run(Date.now(), saleId);
 }
