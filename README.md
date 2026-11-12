@@ -17,7 +17,7 @@ The server defaults to port 8787. Set `PORT` to use another port and `DATA_DIR` 
 
 ## API path
 
-Create a sale with `POST /api/sales`, add seller-confirmed items through `POST /api/sales/:id/items`, then publish with `POST /api/sales/:id/publish`. The create response contains the seller key. Send it as `x-seller-key` on seller routes. Buyers claim at `POST /api/sales/:id/claims`; public sale state is available at `/api/public/sales/:slug`, and live changes stream from `/api/events?saleId=<sale-id>` using Server-Sent Events. A seller can close claims at `POST /api/sales/:id/close` to create and send bundled PayPal invoices.
+Create a sale with `POST /api/sales`, add seller-confirmed items through `POST /api/sales/:id/items`, then publish with `POST /api/sales/:id/publish`. The create response contains the seller key. Send it as `x-seller-key` on seller routes. Buyers claim at `POST /api/sales/:id/claims` (a repeat of the same handle, email and items returns the original claims with `replayed: true`; the route allows 30 claims a minute per client IP and 10 per handle per sale, answering 429 with `Retry-After`, tunable with `CLAIM_RATE_PER_IP`, `CLAIM_RATE_PER_HANDLE`, `CLAIM_RATE_WINDOW_MS`, 0 to turn off); public sale state is available at `/api/public/sales/:slug`, and live changes stream from `/api/events?saleId=<sale-id>` using Server-Sent Events. A seller can close claims at `POST /api/sales/:id/close` to create and send bundled PayPal invoices.
 
 ## Judge it in one minute
 
@@ -52,10 +52,43 @@ Dibs ships an MCP server so Claude Desktop, Claude Code, Cursor, or any MCP clie
 | Tool | What it does |
 | --- | --- |
 | `list_sale` | Sale slug or link → every pocket with number, title, price, status, whether it can be claimed, backup count, photo URL, and the deadline. Read-only. |
-| `claim` | Sale, pocket numbers (or a claim comment such as `mine 3 and 7`), handle, email, optional deposit hold → **First** or **Backup N** per pocket with the server timestamp, any invoice already issued, and what happens next with the PayPal invoice. |
-| `invoice_status` | Invoice id, or sale + handle → PayPal state, total with item/shipping/fee lines, deposit, due time, pay link, tracking, and whether an unpaid item rolled to a backup. |
+| `claim` | Sale, pocket numbers (or a claim comment such as `mine 3 and 7`), handle, email, optional deposit hold → **First** or **Backup N** per pocket with the server timestamp, the PayPal invoice when the sale invoices on first claim (SENT, total, pay link), and what happens next. Retrying the same claim returns the original result. |
+| `invoice_status` | Invoice id, or sale + handle → PayPal state, total with item/shipping/fee lines, deposit, due time, pay link, tracking, and whether an unpaid item rolled to a backup. Reads Dibs' copy of the invoice, synced from PayPal every 15 seconds. |
 
 It also exposes a `dibs://sale/{slug}` resource and a `claim_from_post` prompt (paste a seller's X / Instagram / Discord post and what you want).
+
+### Judge quickstart (about 2 minutes)
+
+Needs Node 24+ and Claude Desktop (or Cursor / Claude Code, below). Paste into a terminal:
+
+```sh
+git clone -b grok-mcp-dibs https://github.com/kamalbuilds/dibs.git && cd dibs
+npm ci && npm run build
+node scripts/mcp-smoke.mjs list_sale '{"sale":"kJ4emW4"}'   # optional: proves it reaches the live Dibs API, read-only
+cat <<JSON
+{
+  "mcpServers": {
+    "dibs": {
+      "command": "$(command -v node)",
+      "args": ["$(pwd)/dist/mcp/main.js"],
+      "env": { "DIBS_BASE_URL": "https://dibs-claims.fly.dev" }
+    }
+  }
+}
+JSON
+```
+
+Merge the printed JSON into Claude Desktop's config (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows: `%APPDATA%\Claude\claude_desktop_config.json`) and restart Claude Desktop. Or, for Claude Code: `claude mcp add dibs -- node "$(pwd)/dist/mcp/main.js"`.
+
+First prompt, read-only:
+
+> What's in this claim sale, and what's still open? https://dibs-claims.fly.dev/s/kJ4emW4
+
+To see an agent claim become a PayPal invoice, create your own sale on https://dibs-claims.fly.dev/new with **Invoice timing: After each first claim**, publish it, then:
+
+> Here's a claim sale: https://dibs-claims.fly.dev/s/&lt;your slug&gt;. Claim pocket 1 for me as @judge_demo, invoice to &lt;sandbox buyer email from /setup&gt;.
+
+The reply carries the server timestamp, the SENT PayPal invoice and its pay link; pay it as a sandbox guest, then ask "Did it go through?". Please claim only on your own sale, not on the demo binder. Dibs calls PayPal Invoicing v2 server-side; the MCP server does not use the PayPal Agent Toolkit or PayPal's MCP server, and never holds PayPal credentials.
 
 Environment:
 
