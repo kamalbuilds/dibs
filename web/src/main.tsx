@@ -95,7 +95,7 @@ async function uploadItemPhoto(itemId: string, file: File, key: string): Promise
 
 function Home() {
   usePageTitle("Claim sales, settled");
-  const [demo, setDemo] = useState<PublicSale | null>(null);
+  const [demo, setDemo] = useState<PublicSale | null>();
   useEffect(() => { api<Config>("/api/config").then((config) => config.demoSaleSlug ? api<PublicSale>(`/api/public/sales/${config.demoSaleSlug}`) : null).then(setDemo).catch(() => setDemo(null)); }, []);
   const claimed = demo?.items.filter((item) => item.status !== "OPEN").length ?? 0;
   return <Shell><main className="page home-page">
@@ -103,7 +103,7 @@ function Home() {
       <p className="eyebrow">CLAIM SALES FOR CARD AND RETRO GAME SELLERS</p>
       <h1>One photo of the table becomes a claim sale that bills itself.</h1>
       <p className="lede">AI cuts every item into its own numbered pocket, the server timestamp settles who called dibs first, and each winner gets a PayPal Goods &amp; Services invoice.</p>
-      <div className="home-actions">{demo && <Link className="button button-primary" to={`/s/${demo.slug}`}>Try a live sale <ArrowUpRight size={16}/></Link>}<Link className={`button ${demo ? "button-secondary" : "button-primary"}`} to="/new"><Plus size={16}/>New sale</Link></div>
+      <div className="home-actions">{demo !== undefined && <>{demo && <Link className="button button-primary" to={`/s/${demo.slug}`}>Try a live sale <ArrowUpRight size={16}/></Link>}<Link className={`button ${demo ? "button-secondary" : "button-primary"}`} to="/new"><Plus size={16}/>New sale</Link></>}</div>
     </section>
     {demo && <Link className="demo-binder" to={`/s/${demo.slug}`} aria-label={`Open the live sale ${demo.title}`}>
       <div className="demo-binder-head"><div><span className="eyebrow">LIVE SALE / {demo.items.length} POCKETS</span><h2>{demo.title}</h2></div><div className="demo-binder-meta"><span><i className={`live-dot ${demo.status === "CLOSED" ? "live-dot-off" : ""}`}/>{demo.status === "CLOSED" ? "CLOSED" : "CLAIMS OPEN"}</span><span>{demo.status === "CLOSED" ? `Closed ${dateTime(demo.closesAtMs)}` : <>Closes in <Countdown due={demo.closesAtMs}/></>}</span><span>{claimed} of {demo.items.length} claimed</span></div></div>
@@ -213,7 +213,7 @@ function Countdown({ due }: { due: number }) {
 }
 
 function StatusCell({ value }: Pick<ICellRendererParams, "value">) {
-  return <StatusChip value={value}/>;
+  return value ? <StatusChip value={value}/> : null;
 }
 
 function Dashboard() {
@@ -257,7 +257,7 @@ function Dashboard() {
     { headerName: "Invoice", marryChildren: true, children: [{ field: "status", headerName: "Status", width: 124, cellRenderer: StatusCell }, { field: "due", headerName: "Due", width: 110, valueFormatter: (p) => p.value ? "" : "", cellRenderer: (p: ICellRendererParams) => p.value ? <Countdown due={p.value}/> : "" }, { field: "subtotal", headerName: "Items", width: 98, valueFormatter: (p) => money(p.value), cellClass: "cell-money" }, { field: "shipping", headerName: "Ship", width: 90, valueFormatter: (p) => money(p.value), cellClass: "cell-money" }, { field: "fee", headerName: "Fee", width: 90, valueFormatter: (p) => money(p.value), cellClass: "cell-money" }, { field: "total", headerName: "Total", width: 100, valueFormatter: (p) => money(p.value), cellClass: "cell-money" }] },
     { field: "actions", headerName: "Actions", width: 220, sortable: false, filter: false, cellRenderer: (p: ICellRendererParams) => p.data.invoice ? <div className="row-actions"><button onClick={() => void invoiceAction(p.data.invoice.id, "remind")}>Remind</button>{p.data.invoice.shipment?.paypal_tracker_id ? <span className="on-paypal" title={p.data.invoice.shipment.paypal_tracker_id}><ShieldCheck size={13}/>Tracking on PayPal</span> : p.data.status === "PAID" ? <button onClick={() => setShip(p.data.invoice)}>Ship</button> : <button onClick={() => void invoiceAction(p.data.invoice.id, "cancel")}>Pass</button>}</div> : "" },
   ];
-  const pinnedBottomRowData = [{ number: "TOTALS", title: "Invoice totals", buyer: "", claimed: "", backup: "", status: "", due: "", subtotal: totals.subtotal, shipping: totals.shipping, fee: totals.fees, total: totals.total }];
+  const pinnedBottomRowData = [{ number: "TOTALS", title: "Invoice totals", buyer: "", claimed: "", backup: null, status: "", due: "", subtotal: totals.subtotal, shipping: totals.shipping, fee: totals.fees, total: totals.total }];
   const buyers = new Set((data?.claims ?? []).map((claim) => claim.handle.toLowerCase())).size;
 
   if (error && !data) return <Shell live={live}><main className="page"><p className="eyebrow">SELLER / ACCESS</p><h1>Open your sale.</h1><p className="error-message">{error}</p><Field label="Seller access key"><input aria-label="Seller access key" type="password" autoComplete="current-password" value={accessKey} onChange={(e) => { setAccessKey(e.target.value); localStorage.setItem(keyName(saleId), e.target.value); }} /></Field><button className="button button-primary" onClick={() => void load()}>Continue</button></main></Shell>;
