@@ -176,6 +176,10 @@ describe("await_payment", () => {
     const timedOut = await awaitPayment(dibs(), new SessionMemory(), { invoiceId: body.payment.invoiceId, timeoutSeconds: 12, intervalSeconds: 4 }, { now: () => clock, sleep: async (ms) => { clock += ms; } });
     expect(timedOut.data).toMatchObject({ outcome: "timeout", finalStatus: "SENT", timedOut: true, polls: 4, elapsedSeconds: 12 });
     expect(timedOut.text).toMatch(/^Still SENT after 12s/);
+    clock = 0;
+    const uneven = await awaitPayment(dibs(), new SessionMemory(), { invoiceId: body.payment.invoiceId, timeoutSeconds: 8, intervalSeconds: 3 }, { now: () => clock, sleep: async (ms) => { clock += ms; } });
+    expect(uneven.data).toMatchObject({ outcome: "timeout", elapsedSeconds: 8 });
+    expect(uneven.text).toMatch(/^Still SENT after 8s/);
 
     remote.set(body.payment.paypalInvoiceId, "CANCELLED");
     const cancelled = await awaitPayment(dibs(), new SessionMemory(), { invoiceId: body.payment.invoiceId }, { sleep: async () => undefined });

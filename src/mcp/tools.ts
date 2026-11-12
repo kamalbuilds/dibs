@@ -150,8 +150,9 @@ export async function awaitPayment(client: DibsClient, memory: SessionMemory, in
     if (latest.refresh.checkedPayPal) paypalChecks += 1;
     history.push({ at: iso(now()), status: latest.invoice.status, checkedPayPal: latest.refresh.checkedPayPal });
     await options.onPoll?.(history.length, latest.invoice.status, now() - started, timeoutMs);
-    if (FINAL.has(latest.invoice.status) || now() - started + intervalMs > timeoutMs) break;
-    await sleep(intervalMs);
+    const remainingMs = timeoutMs - (now() - started);
+    if (FINAL.has(latest.invoice.status) || remainingMs <= 0) break;
+    await sleep(Math.min(intervalMs, remainingMs));
   }
   const status = latest.invoice.status;
   const outcome = status === "CANCELLED" ? "cancelled" : FINAL.has(status) ? "paid" : "timeout";
