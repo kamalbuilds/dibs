@@ -27,7 +27,12 @@ Dibs runs live at https://dibs-claims.fly.dev against the PayPal sandbox.
 2. **Fill the binder.** Choose up to four photos and press **Review photos** for AI itemization; each pocket shows the label the AI read ("AI read PAPERBOY on the item"). Or press **Add item by hand**. Set a price on every pocket and press **Publish sale**. Dibs opens the seller docket at `/dash/<sale id>`.
 3. **Claim as a buyer.** Open the public binder link shown on the docket (`/s/<slug>`) in a second tab. Tap a pocket, enter any handle, and use the PayPal sandbox buyer email printed under the email field (it is also on `/setup`). Press **Claim**. The pocket stamps your handle with the server timestamp, and the docket row fills in live over Server-Sent Events.
 4. **Invoice.** On the docket, press **Send PayPal invoices**. Each buyer gets one bundled Goods and Services invoice with the shipping tier applied, and the invoice list shows it as SENT with its total and a link to the PayPal sandbox invoice page.
-5. **Pay.** Open that link, log in as the sandbox buyer, and pay. The reconciler reads the invoice from PayPal every 15 seconds; once PayPal reports PAID, the pocket flips to PAID on the buyer page and the AG Grid docket, and the row offers **Ship** for tracking.
+5. **Pay.** Open that link, log in as the sandbox buyer, and pay. The reconciler reads the invoice from PayPal every 15 seconds; once PayPal reports PAID, the pocket flips to PAID on the buyer page and the AG Grid docket.
+6. **Ship.** Press **Ship** on the paid row and enter the carrier and tracking number. Dibs reads the payment's PayPal transaction id from the invoice, attaches the tracker to that transaction on PayPal, reads it back as SHIPPED, and the docket row and buyer receipt both show **Tracking on PayPal**. Tracking on the PayPal transaction is what Seller Protection checks for proof of delivery.
+
+**Holds.** A buyer who ticks **Hold with 20% deposit** gets an invoice with that deposit as the minimum due now (the seller sets the percentage). Once PayPal reports the deposit received, Dibs marks it HELD and keeps the item for that buyer past the claim deadline instead of passing it to a backup.
+
+**The fee line.** When the seller splits the Goods and Services fee or passes it on, the PayPal invoice carries it as its own line, "G&S fee (split)" or "G&S fee (buyer pays)", so the buyer sees exactly what the protected payment costs them.
 
 To bring claims in from a comment thread, open `/import/<sale id>` from the docket, paste the replies as copied, press **Parse comments**, pick an item where two match, add buyer emails, and confirm. The claims land in the same timestamped queue, backups included.
 
@@ -35,7 +40,7 @@ To bring claims in from a comment thread, open `/import/<sale id>` from the dock
 
 ## PayPal and AI
 
-Dibs uses PayPal Invoicing v2 for invoice creation, sending, reminders, cancellation, and readback. The polling reconciler runs every 15 seconds; webhook signatures are checked through PayPal's verification endpoint when `PAYPAL_WEBHOOK_ID` is configured. OpenRouter chat completions use JSON Schema output validated by Zod before the server accepts suggestions.
+Dibs uses PayPal Invoicing v2 for invoice creation (including deposit invoices with a minimum due), sending, reminders, cancellation, and readback, and Shipment Tracking v1 (`/v1/shipping/trackers`) to attach tracking to the paid transaction. The polling reconciler runs every 15 seconds; webhook signatures are checked through PayPal's verification endpoint when `PAYPAL_WEBHOOK_ID` is configured. OpenRouter chat completions use JSON Schema output validated by Zod before the server accepts suggestions.
 
 ## Render
 
