@@ -23,7 +23,7 @@ Create a sale with `POST /api/sales`, add seller-confirmed items through `POST /
 
 Dibs runs live at https://dibs-claims.fly.dev against the PayPal sandbox.
 
-1. **Try the live sale.** The home page opens a live binder of 25 Conan Doyle Characters cigarette cards (Boguslavsky, 1923). One public-domain photo went through the AI itemizer, and every pocket shows its own server-side crop. Claim a pocket there, or start your own sale below.
+1. **Try the live sale.** The home page opens a live binder of 25 Conan Doyle Characters cigarette cards (Alexander Boguslavsky, 1923, public domain: [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:25_cigarette_cards.jpg)). One public-domain photo went through the AI itemizer, and every pocket shows its own server-side crop. Claim a pocket there, or start your own sale below.
 2. **Start a sale.** Press **New sale** (`/new`), name the sale, pick a claim window (5 minutes is enough for a demo), keep the shipping and Goods and Services fee defaults, and press **Create sale**.
 3. **Fill the binder.** Choose up to four photos and press **Review photos** for AI itemization. The model boxes every item, Dibs crops each one into its pocket, and each row shows the label the AI read ("AI read PAPERBOY on the item"). Click a pocket photo to replace it. Or press **Add item by hand**. Set a price on every pocket and press **Publish sale**. Dibs opens the seller docket at `/dash/<sale id>`.
 4. **Claim as a buyer.** Open the public binder link shown on the docket (`/s/<slug>`) in a second tab. Tap a pocket, enter any handle, and use the PayPal sandbox buyer email printed under the email field (it is also on `/setup`). Press **Claim**. The pocket stamps your handle with the server timestamp, and the docket row fills in live over Server-Sent Events.
@@ -62,7 +62,7 @@ It also exposes a `dibs://sale/{slug}` resource and a `claim_from_post` prompt (
 Needs Node 24+ and Claude Desktop (or Cursor / Claude Code, below). Paste into a terminal:
 
 ```sh
-git clone -b grok-mcp-dibs https://github.com/kamalbuilds/dibs.git && cd dibs
+git clone https://github.com/kamalbuilds/dibs.git && cd dibs
 npm ci && npm run build
 node scripts/mcp-smoke.mjs list_sale '{"sale":"kJ4emW4"}'   # optional: proves it reaches the live Dibs API, read-only
 cat <<JSON
@@ -93,7 +93,8 @@ The reply carries the server timestamp, the SENT PayPal invoice and its pay link
 Environment:
 
 - `DIBS_BASE_URL`: Dibs instance to talk to. Defaults to `https://dibs-claims.fly.dev`.
-- `DIBS_SELLER_KEY` (optional): a sale's seller key. Adds buyer handles to `list_sale` queues and lets `invoice_status` look up any buyer by handle. Buyers never need it; without it `invoice_status` works by invoice id or for invoices claimed in the same session.
+- `DIBS_SELLER_KEY` (optional, stdio): a sale's seller key. Adds buyer handles to `list_sale` queues and lets `invoice_status` look up any buyer by handle. Buyers never need it; without it `invoice_status` works by invoice id or for invoices claimed in the same session.
+- `MCP_ALLOWED_HOSTS` (optional, HTTP): extra `host:port` values the Streamable HTTP server answers on. It always answers on `127.0.0.1` and `localhost`, checks the Host header against this list to block DNS rebinding, serves every caller as a buyer (the server never loads `DIBS_SELLER_KEY`; a caller can pass its own `sellerKey`), and keeps no memory between requests.
 
 Run it:
 

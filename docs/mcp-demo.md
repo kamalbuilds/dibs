@@ -26,8 +26,6 @@ Record against a **fresh sale** that you create for the take. Do not use the her
 | 0:14 to 0:22 | Click the pay link; sandbox invoice; pay as a guest with the test Visa; PayPal "Paid" confirmation | VO: "I pay the PayPal invoice, with buyer protection." |
 | 0:22 to 0:28 | Back in Claude: "Did it go through?", then `invoice_status`, then "...: PAID, $27.76. Paid on PayPal."; the binder pocket shows PAID | VO: "The agent confirms it's paid. If I hadn't paid, it would roll to the backup." |
 
-(Shot list and voice-over as given in the Judge's review, `grok-team/RANKING.md`.)
-
 ### Exact prompts
 
 1. Paste, as one message:
@@ -62,7 +60,7 @@ Next:
 
 The total is the $26.00 item, plus the sale's shipping tier, plus the buyer's half of the G&S fee when the fee is split. It reads $27.76 with $1.00 shipping; with other defaults the number differs, so say "the invoice" rather than the amount in VO. The structured result carries `invoices[0].status = "SENT"` and `invoices[0].payUrl`.
 
-**3. Pay.** Click the pay link. On the PayPal sandbox invoice page choose to pay by **debit or credit card** (guest), and use the sandbox test Visa: `4111 1111 1111 1111`, any future expiry, any CVV, any name and US address. If PayPal rejects it, generate a Visa in the PayPal Developer dashboard (Testing tools, Card generator). Wallet login for the sandbox buyer has failed before; use the guest card path.
+**3. Pay.** Click the pay link. On the PayPal sandbox invoice page choose to pay by **debit or credit card** (guest), and use the sandbox test Visa: `4111 1111 1111 1111`, any future expiry, any CVV, any name and US address. If PayPal rejects it, generate a Visa in the PayPal Developer dashboard (Testing tools, Card generator).
 
 **4. `invoice_status`** `{ "sale": "<slug>", "handle": "kamal_demo" }` (the server remembers the invoice id from the claim in this session)
 
@@ -81,7 +79,7 @@ Dibs reads PayPal every 15 seconds, so PAID can lag the PayPal confirmation by u
 
 ## Rehearse locally first
 
-A local run needs PayPal sandbox credentials in your own environment for invoices; without them a first-claim sale cannot invoice. The flow is covered without the network by `src/mcp/integration.test.ts` (MCP client → real routes → claim → SENT with pay link → retry → Backup 1 → PAID, PayPal faked).
+A local run invoices through the PayPal sandbox credentials in your own environment. The flow is covered without the network by `src/mcp/integration.test.ts` (MCP client → real routes → claim → SENT with pay link → retry → Backup 1 → PAID, with PayPal's HTTP API served in memory).
 
 ```sh
 PORT=8796 DATA_DIR=$(mktemp -d) node --import tsx src/server.ts     # then create the sale on http://localhost:8796/new
