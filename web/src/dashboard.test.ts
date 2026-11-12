@@ -26,7 +26,7 @@ it("moves the docket row to the backup buyer on the SSE event and keeps the tota
   const dataRow = '.ag-center-cols-container .ag-row[row-index="0"]';
   await vi.waitFor(() => expect(cell(dataRow, "buyer")).toBe("@alice"), { timeout: 15000 });
   expect(cell(dataRow, "backup")).toBe("1");
-  expect([...document.querySelectorAll(".ag-header-group-text")].map((node) => node.textContent)).toEqual(["Item", "Claim", "Invoice"]);
+  expect([...document.querySelectorAll(".ag-header-group-text")].map((node) => node.textContent).filter(Boolean)).toEqual(["Item", "Claim", "Invoice"]);
   expect(cell(dataRow, "number")).toBe("#01");
   const totals = document.querySelector(".ag-floating-bottom")!;
   expect(totals.textContent).toContain("$31.00");

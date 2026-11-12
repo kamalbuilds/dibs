@@ -23,7 +23,7 @@ function requireOwner(context: Context, saleId: string) {
 }
 
 app.get("/api/health", (c) => c.json({ ok: true, missing: missingSetup() }));
-app.get("/api/config", (c) => c.json({ missing: missingSetup(), optionalMissing: optionalMissing(), demoBuyerEmail: process.env.DEMO_BUYER_EMAIL || null, demoSaleSlug: process.env.DEMO_SALE_SLUG || null, aiModel: aiModel(), paypalEnvironment: process.env.PAYPAL_ENV === "live" ? "live" : "sandbox" }));
+app.get("/api/config", (c) => c.json({ missing: missingSetup(), optionalMissing: optionalMissing(), comps: compsConfigured(), demoBuyerEmail: process.env.DEMO_BUYER_EMAIL || null, demoSaleSlug: process.env.DEMO_SALE_SLUG || null, aiModel: aiModel(), paypalEnvironment: process.env.PAYPAL_ENV === "live" ? "live" : "sandbox" }));
 
 app.post("/api/sales", async (c) => {
   try {

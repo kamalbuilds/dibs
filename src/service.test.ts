@@ -58,15 +58,15 @@ const { refreshComps, itemComps } = await import("./service.js");
 const { getItem } = await import("./store.js");
 
 describe("comps without a Channel3 key", () => {
-  it("report unavailable on both the review grid and the docket instead of nothing", async () => {
+  it("are absent on both the review grid and the docket", async () => {
     const saved = process.env.CHANNEL3_API_KEY;
     delete process.env.CHANNEL3_API_KEY;
     try {
       const { sale } = createNewSale({ title: "No key", deadlineMinutes: 60, ...rules });
       const item = addSaleItem(sale.id, { title: "Pikachu Jungle", priceCents: 900 });
       const fresh = (await refreshComps([item.id])).get(item.id);
-      expect(fresh).toMatchObject({ status: "error", query: "Pikachu Jungle" });
-      expect(itemComps(getItem(item.id)!)).toMatchObject({ status: "error", query: "Pikachu Jungle" });
+      expect(fresh).toBeUndefined();
+      expect(itemComps(getItem(item.id)!)).toBeNull();
     } finally { if (saved !== undefined) process.env.CHANNEL3_API_KEY = saved; }
   });
 });

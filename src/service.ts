@@ -82,8 +82,7 @@ export function removeSaleItem(itemId: string): void {
   event(sale.id, "item_removed", { number: item.number, title: item.title }, item.id);
 }
 
-const compsOff = (item: ItemRow): Comps => ({ status: "error", message: "Channel3 is not connected on this server", query: item.title, checkedAtMs: Date.now() });
-export const itemComps = (item: ItemRow): Comps | null => item.comps_json ? JSON.parse(item.comps_json) as Comps : compsConfigured() ? null : compsOff(item);
+export const itemComps = (item: ItemRow): Comps | null => item.comps_json && compsConfigured() ? JSON.parse(item.comps_json) as Comps : null;
 
 // Archiving takes a sale off its public link and stops new claims. Claims already made still settle through the reconciler.
 export function archive(saleId: string): SaleRow {
@@ -109,10 +108,7 @@ export function extendDeadline(saleId: string, closesAtMs: number): SaleRow {
 // ponytail: five Channel3 searches at a time; a 200-item binder takes ~40 calls' worth of waiting. Queue it if sales get bigger.
 export async function refreshComps(itemIds: string[]): Promise<Map<string, Comps>> {
   const results = new Map<string, Comps>();
-  if (!compsConfigured()) {
-    for (const id of itemIds) { const item = getItem(id); if (item) results.set(id, compsOff(item)); }
-    return results;
-  }
+  if (!compsConfigured()) return results;
   for (let start = 0; start < itemIds.length; start += 5) {
     await Promise.all(itemIds.slice(start, start + 5).map(async (id) => {
       const item = getItem(id);
