@@ -4,6 +4,7 @@ export const VisionItemSchema = z.object({
   title: z.string().trim().min(1),
   set_or_platform: z.string().nullable(),
   condition_notes: z.string().nullable(),
+  read_text: z.string(),
   position: z.number().int().positive(),
   confidence: z.number().min(0).max(1),
 });
@@ -20,6 +21,8 @@ export const ThreadEventSchema = z.object({
 });
 
 export const ThreadSchema = z.object({ events: z.array(ThreadEventSchema).max(2000) });
+
+export const ThreadModelSchema = z.object({ events: z.array(ThreadEventSchema.omit({ raw: true }).extend({ line: z.number().int().positive() })).max(2000) });
 export type ThreadEvent = z.infer<typeof ThreadEventSchema>;
 
 export const SaleInputSchema = z.object({

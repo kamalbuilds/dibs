@@ -85,7 +85,32 @@ function similarity(a: string, b: string): number {
   return Math.max(dice, edit, queryCoverage);
 }
 
-export type RefResolution = { status: "matched"; itemId: string } | { status: "ambiguous" | "needs_seller"; candidates: string[] } | { status: "out_of_range" };
+type ModelThreadEvent = { handle: string; line: number; kind: "claim" | "backup" | "question" | "other"; itemRefs: Array<string | number>; timestamp: string | null };
+
+// Raw text comes from the paste itself, so every event is provably linked to a real source line.
+export function linkThreadEvents(lines: string[], events: ModelThreadEvent[]): Array<Omit<ModelThreadEvent, "handle"> & { handle: string; raw: string }> {
+  let previous = 0;
+  return events.map((event) => {
+    if (!Number.isInteger(event.line) || event.line < 1 || event.line > lines.length) throw new Error(`line ${event.line} is outside the pasted thread`);
+    if (event.line < previous) throw new Error(`line ${event.line} breaks source order`);
+    previous = event.line;
+    const handle = event.handle.trim();
+    const bare = handle.replace(/^@/, "").toLowerCase();
+    const above = lines.slice(Math.max(0, event.line - 8), event.line).join("\n").toLowerCase();
+    if (!bare || !above.includes(bare)) throw new Error(`handle ${handle || "(empty)"} is not visible above line ${event.line}`);
+    return { ...event, handle, raw: lines[event.line - 1] };
+  });
+}
+
+const words = (value: string) => new Set(normalizeRef(value).split(" ").filter((word) => word.length >= 3));
+
+// A title with no word in the label text the model read is a guess: push it under the 0.7 review flag.
+export function groundVisionItem<T extends { title: string; read_text: string; confidence: number }>(item: T): T {
+  const read = words(item.read_text);
+  return [...words(item.title)].some((word) => read.has(word)) ? item : { ...item, confidence: Math.min(item.confidence, 0.5) };
+}
+
+export type RefResolution ={ status: "matched"; itemId: string } | { status: "ambiguous" | "needs_seller"; candidates: string[] } | { status: "out_of_range" };
 
 export function resolveItemRef(ref: string | number, items: Array<{ id: string; number: number; title: string }>, threshold = 0.72): RefResolution {
   const text = String(ref).trim();

@@ -1,19 +1,22 @@
-import { ThreadSchema, VisionSchema, type ThreadEvent, type VisionResult } from "./ai-schemas.js";
+import { groundVisionItem, linkThreadEvents } from "./domain.js";
+import { ThreadModelSchema, VisionSchema, type ThreadEvent, type VisionResult } from "./ai-schemas.js";
 
 export class AiOutputError extends Error {}
 
+export const aiModel = () => process.env.AI_MODEL || "google/gemini-3.8-flash";
+
 const visionJsonSchema = {
   type: "object", additionalProperties: false, required: ["items"], properties: {
-    items: { type: "array", items: { type: "object", additionalProperties: false, required: ["title", "set_or_platform", "condition_notes", "position", "confidence"], properties: {
-      title: { type: "string" }, set_or_platform: { type: ["string", "null"] }, condition_notes: { type: ["string", "null"] }, position: { type: "integer", minimum: 1 }, confidence: { type: "number", minimum: 0, maximum: 1 },
+    items: { type: "array", items: { type: "object", additionalProperties: false, required: ["title", "set_or_platform", "condition_notes", "read_text", "position", "confidence"], properties: {
+      title: { type: "string" }, read_text: { type: "string" }, set_or_platform: { type: ["string", "null"] }, condition_notes: { type: ["string", "null"] }, position: { type: "integer", minimum: 1 }, confidence: { type: "number", minimum: 0, maximum: 1 },
     } } },
   },
 } as const;
 
 const threadJsonSchema = {
   type: "object", additionalProperties: false, required: ["events"], properties: {
-    events: { type: "array", items: { type: "object", additionalProperties: false, required: ["handle", "raw", "kind", "itemRefs", "timestamp"], properties: {
-      handle: { type: "string" }, raw: { type: "string" }, kind: { type: "string", enum: ["claim", "backup", "question", "other"] }, itemRefs: { type: "array", items: { anyOf: [{ type: "integer", minimum: 1 }, { type: "string" }] } }, timestamp: { type: ["string", "null"] },
+    events: { type: "array", items: { type: "object", additionalProperties: false, required: ["handle", "line", "kind", "itemRefs", "timestamp"], properties: {
+      handle: { type: "string" }, line: { type: "integer", minimum: 1 }, kind: { type: "string", enum: ["claim", "backup", "question", "other"] }, itemRefs: { type: "array", items: { anyOf: [{ type: "integer", minimum: 1 }, { type: "string" }] } }, timestamp: { type: ["string", "null"] },
     } } },
   },
 } as const;
@@ -21,7 +24,7 @@ const threadJsonSchema = {
 async function completion<T>(instruction: string, content: unknown[], jsonSchema: unknown, parse: (raw: string) => T): Promise<T> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("AI setup requires OPENROUTER_API_KEY");
-  const model = process.env.AI_MODEL || "google/gemini-2.5-flash";
+  const model = aiModel();
   let validationError = "";
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -48,22 +51,19 @@ async function completion<T>(instruction: string, content: unknown[], jsonSchema
 export async function identifyItems(image: Buffer, mimeType: string): Promise<VisionResult> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) throw new Error("Use a JPEG, PNG, or WebP image");
   if (!image.length || image.length > 12 * 1024 * 1024) throw new Error("Each sale photo must be under 12 MB");
-  const instruction = "Find distinct collectible cards, comics, or retro games a seller could list separately in the photo. Order positions left to right, then top to bottom. Give only a title supported by visible text or identifiable art, set/platform when visible, condition notes only for visible defects, and a confidence from 0 to 1. Never guess unreadable details. Low confidence still appears for seller review. Price is always handled by the seller.";
+  const instruction = "Find distinct collectible cards, comics, or retro games a seller could list separately in the photo. Order positions left to right, then top to bottom. For each item, copy into read_text the exact label text you can actually read on it (empty string when nothing is legible). Title it from that text; when nothing is legible, give your best identification with a low confidence. Give set/platform when visible, condition notes only for visible defects, and a confidence from 0 to 1. Never guess unreadable details. Low confidence still appears for seller review. Price is always handled by the seller.";
   const result = await completion(instruction, [
     { type: "text", text: "Itemize the collectibles in this real sale photo." },
     { type: "image_url", image_url: { url: `data:${mimeType};base64,${image.toString("base64")}` } },
   ], visionJsonSchema, (raw) => VisionSchema.parse(JSON.parse(raw)));
-  return { items: result.items.sort((a, b) => a.position - b.position) };
+  return { items: result.items.map(groundVisionItem).sort((a, b) => a.position - b.position) };
 }
 
 export async function parseThread(text: string): Promise<ThreadEvent[]> {
   if (!text.trim() || text.length > 150_000) throw new Error("Paste a comment thread under 150,000 characters");
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  const instruction = "Parse a copied social claim-sale thread. Produce one event per source line, preserve the exact full source line in raw, and extract a visible author handle. Classify claim, backup, question, or other. Item refs may be item numbers or title phrases. Do not infer a missing handle, item, or timestamp. Relative timestamps remain as written. Keep source order.";
-  const result = await completion(instruction, [{ type: "text", text: `Parse these source lines exactly:\n${text}` }], threadJsonSchema, (raw) => {
-    const parsed = ThreadSchema.parse(JSON.parse(raw));
-    if (parsed.events.length !== lines.length || parsed.events.some((event, index) => event.raw !== lines[index])) throw new AiOutputError("each extracted event must link to its exact source line in source order");
-    return parsed;
-  });
-  return result.events;
+  const lines = text.split(/\r?\n/);
+  const instruction = "Parse a claim-sale comment thread copied from X, Instagram, or Discord. Lines are numbered as 'N| text'. Copied threads put author name, @handle, separators, time ('3m', '11:42 PM', 'Today at 9:15 PM'), 'Reply' and like counts on their own lines around the comment text. Return one event per comment body, in source order, never for header lines. line is the number of the line holding the comment text. handle is the @handle or username shown in that comment's header, as written. timestamp is the time shown in that comment's header, as written, or null. Classify claim (mine, claim, dibs), backup, question, or other. itemRefs are item numbers or title phrases the comment names. Never invent a handle, item, or time.";
+  const numbered = lines.map((line, index) => `${index + 1}| ${line}`).join("\n");
+  const result = await completion(instruction, [{ type: "text", text: numbered }], threadJsonSchema, (raw) => linkThreadEvents(lines, ThreadModelSchema.parse(JSON.parse(raw)).events));
+  return result.map(({ line: _line, ...event }) => event);
 }

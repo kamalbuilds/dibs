@@ -3,7 +3,7 @@ import { ClaimInputSchema, ItemInputSchema, SaleInputSchema, ThreadSchema, Visio
 
 describe("AI response schemas", () => {
   it("accepts structured collectible detections and rejects unsupported confidence", () => {
-    const item = { title: "Charizard ex", set_or_platform: "Pokémon TCG", condition_notes: null, position: 1, confidence: 0.8 };
+    const item = { title: "Charizard ex", set_or_platform: "Pokémon TCG", condition_notes: null, read_text: "CHARIZARD ex", position: 1, confidence: 0.8 };
     expect(VisionSchema.parse({ items: [item] }).items).toHaveLength(1);
     expect(VisionSchema.safeParse({ items: [{ ...item, confidence: 1.1 }] }).success).toBe(false);
     expect(VisionSchema.safeParse({ items: [{ ...item, title: "" }] }).success).toBe(false);

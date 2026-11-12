@@ -109,6 +109,8 @@ h1 { margin: 7px 0 12px; font: 500 43px/1 var(--font-display); letter-spacing: -
 .review-detail { display: grid; gap: 5px; }
 .review-detail input { min-height: 30px; padding: 5px 8px; font-size: 11px; }
 .review-detail input:first-child { font-size: 13px; font-weight: 600; }
+.read-evidence { margin: 2px 0 0; color: var(--secondary); font: 10px/1.4 var(--font-numeric); letter-spacing: .02em; }
+.read-evidence q { color: var(--ink); font-weight: 600; }
 .price-entry { min-height: 34px; }
 .price-entry input { min-height: 31px; padding: 4px; font: 12px var(--font-numeric); }
 .icon-button { width: 31px; height: 31px; display: inline-grid; place-items: center; border: 1px solid var(--rule); border-radius: var(--radius); background: transparent; cursor: pointer; }

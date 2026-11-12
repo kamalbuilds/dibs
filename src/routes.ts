@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { ClaimInputSchema, ItemInputSchema, SaleInputSchema, ThreadSchema } from "./ai-schemas.js";
-import { identifyItems, parseThread } from "./ai.js";
+import { aiModel, identifyItems, parseThread } from "./ai.js";
 import { parseClaimCommand } from "./domain.js";
 import { db, getInvoice, getItem, getSaleById, listItems, listInvoices } from "./store.js";
 import { addSaleItem, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, subscribe, retryInvoice } from "./service.js";
@@ -20,7 +20,7 @@ function requireOwner(context: Context, saleId: string) {
 }
 
 app.get("/api/health", (c) => c.json({ ok: true, missing: missingSetup() }));
-app.get("/api/config", (c) => c.json({ missing: missingSetup(), demoBuyerEmail: process.env.DEMO_BUYER_EMAIL || null, aiModel: process.env.AI_MODEL || "google/gemini-2.5-flash", paypalEnvironment: process.env.PAYPAL_ENV === "live" ? "live" : "sandbox" }));
+app.get("/api/config", (c) => c.json({ missing: missingSetup(), demoBuyerEmail: process.env.DEMO_BUYER_EMAIL || null, aiModel: aiModel(), paypalEnvironment: process.env.PAYPAL_ENV === "live" ? "live" : "sandbox" }));
 
 app.post("/api/sales", async (c) => {
   try {
@@ -89,7 +89,8 @@ app.post("/api/sales/:id/vision", async (c) => {
       const identified = await identifyItems(Buffer.from(await file.arrayBuffer()), file.type);
       items.push(...identified.items);
     }
-    const added = items.map((item) => addSaleItem(sale.id, { title: item.title, setOrPlatform: item.set_or_platform, conditionNotes: item.condition_notes, confidence: item.confidence }));
+    // ponytail: read_text is returned for the review screen only, not stored; persist it if sellers need it after reload.
+    const added = items.map((item) => ({ ...addSaleItem(sale.id, { title: item.title, setOrPlatform: item.set_or_platform, conditionNotes: item.condition_notes, confidence: item.confidence }), read_text: item.read_text }));
     return c.json({ items: added }, 201);
   } catch (error) { return c.json({ error: validationError(error) }, 400); }
 });
