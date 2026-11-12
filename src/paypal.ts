@@ -21,12 +21,28 @@ export interface CreateInvoiceInput {
   currency: string;
   note: string;
   feePolicy: FeePolicy;
+  minimumDueCents?: number | null;
 }
 
 export interface PayPalInvoice {
   id: string;
   status: string;
   payerUrl: string | null;
+  transactionIds: string[];
+}
+
+export class MissingTransactionError extends Error {}
+
+// Carrier codes from https://developer.paypal.com/docs/tracking/reference/carriers/ ; anything else goes as OTHER with its name.
+const CARRIERS = new Set(["USPS", "UPS", "FEDEX", "ONTRAC"]);
+
+export function trackerPayload(transactionId: string | null | undefined, carrier: string, trackingNumber: string) {
+  if (!transactionId) throw new MissingTransactionError("PayPal shows no payment transaction for this invoice, so tracking has nothing to attach to");
+  const code = carrier.trim().toUpperCase();
+  return {
+    transaction_id: transactionId, tracking_number: trackingNumber.trim(), status: "SHIPPED", notify_buyer: true,
+    ...(CARRIERS.has(code) ? { carrier: code } : { carrier: "OTHER", carrier_name_other: carrier.trim() }),
+  };
 }
 
 let cachedToken: { value: string; expiresAt: number } | undefined;
@@ -74,7 +90,9 @@ function invoiceFrom(body: Record<string, unknown>): PayPalInvoice {
   const links = Array.isArray(body.links) ? body.links as Array<{ rel?: string; href?: string }> : [];
   const detail = body.detail as { metadata?: { recipient_view_url?: string } } | undefined;
   const payerUrl = links.find((link) => link.rel === "payer-view")?.href ?? detail?.metadata?.recipient_view_url ?? null;
-  return { id: String(body.id ?? ""), status: String(body.status ?? ""), payerUrl };
+  const payments = body.payments as { transactions?: Array<{ payment_id?: string }> } | undefined;
+  const transactionIds = (payments?.transactions ?? []).map((transaction) => transaction.payment_id).filter((id): id is string => !!id);
+  return { id: String(body.id ?? ""), status: String(body.status ?? ""), payerUrl, transactionIds };
 }
 
 export async function createInvoice(input: CreateInvoiceInput, requestId: string): Promise<PayPalInvoice> {
@@ -84,7 +102,9 @@ export async function createInvoice(input: CreateInvoiceInput, requestId: string
     detail: { currency_code: input.currency, note: input.note, payment_term: { term_type: "DUE_ON_RECEIPT" } },
     primary_recipients: [{ billing_info: { email_address: input.email } }],
     items,
-    configuration: { allow_tip: false, partial_payment: { allow_partial_payment: false } },
+    configuration: { allow_tip: false, partial_payment: input.minimumDueCents
+      ? { allow_partial_payment: true, minimum_amount_due: { currency_code: input.currency, value: (input.minimumDueCents / 100).toFixed(2) } }
+      : { allow_partial_payment: false } },
     amount: { breakdown: { shipping: { amount: { currency_code: input.currency, value: (input.shippingCents / 100).toFixed(2) } } } },
   };
   const created = await api<Record<string, unknown>>("/v2/invoicing/invoices", { method: "POST", headers: { Prefer: "return=representation", "PayPal-Request-Id": requestId }, body: JSON.stringify(payload) });
@@ -116,6 +136,14 @@ export async function cancelInvoice(invoiceId: string, requestId: string): Promi
   const result = await readInvoice(invoiceId);
   if (result.status !== "CANCELLED") throw new Error(`PayPal invoice read-back was ${result.status}, expected CANCELLED`);
   return result;
+}
+
+export async function addTracker(payload: ReturnType<typeof trackerPayload>, requestId: string): Promise<{ id: string; status: string; transactionId: string }> {
+  await api<unknown>("/v1/shipping/trackers", { method: "POST", headers: { "PayPal-Request-Id": requestId }, body: JSON.stringify(payload) });
+  const id = `${payload.transaction_id}-${payload.tracking_number}`;
+  const tracker = await api<{ transaction_id?: string; status?: string }>(`/v1/shipping/trackers/${encodeURIComponent(id)}`);
+  if (tracker.transaction_id !== payload.transaction_id || tracker.status !== "SHIPPED") throw new Error(`PayPal tracker read-back was ${tracker.status ?? "missing"}, expected SHIPPED`);
+  return { id, status: tracker.status, transactionId: tracker.transaction_id };
 }
 
 export async function remindInvoice(invoiceId: string, requestId: string): Promise<void> {

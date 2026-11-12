@@ -25,6 +25,7 @@ const created = createNewSale({
   feePolicy: "seller_absorbs",
   feeRateBasisPoints: 349,
   feeFixedCents: 49,
+  depositBasisPoints: 2000,
 });
 const firstItem = addSaleItem(created.sale.id, { title: "Sandbox smoke item one", priceCents: 100 });
 addSaleItem(created.sale.id, { title: "Sandbox smoke item two", priceCents: 200 });

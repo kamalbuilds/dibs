@@ -8,7 +8,7 @@ const { addSaleItem, createNewSale, publicSale, publish, submitClaims } = await 
 
 describe("public backup count", () => {
   it("does not count the current claimant as a backup", async () => {
-    const { sale } = createNewSale({ title: "Backup count", deadlineMinutes: 60, invoiceMode: "sale_close", shipping: { tiers: [{ label: "Mailer", amountCents: 500 }] }, feePolicy: "seller_absorbs", feeRateBasisPoints: 349, feeFixedCents: 49 });
+    const { sale } = createNewSale({ title: "Backup count", deadlineMinutes: 60, invoiceMode: "sale_close", shipping: { tiers: [{ label: "Mailer", amountCents: 500 }] }, feePolicy: "seller_absorbs", feeRateBasisPoints: 349, feeFixedCents: 49, depositBasisPoints: 2000 });
     const item = addSaleItem(sale.id, { title: "Charizard", priceCents: 1250 });
     publish(sale.id);
     const count = () => publicSale(sale.slug)!.items[0].backupCount;

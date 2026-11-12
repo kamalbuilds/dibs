@@ -40,7 +40,7 @@ export interface CartTotals extends FeeBreakdown {
   totalCents: number;
 }
 
-export type InvoiceStatus = "SENT" | "UNPAID" | "PAID" | "MARKED_AS_PAID" | "CANCELLED" | "FAILED";
+export type InvoiceStatus = "SENT" | "UNPAID" | "PARTIALLY_PAID" | "PAID" | "MARKED_AS_PAID" | "CANCELLED" | "FAILED";
 
 export function orderClaims<T extends Pick<ClaimInput, "atMs" | "sequence">>(claims: T[]): T[] {
   return [...claims].sort((a, b) => a.atMs - b.atMs || a.sequence - b.sequence);
@@ -178,11 +178,23 @@ export function calculateCart(subtotalCents: number, itemCount: number, rules: S
   return { ...fee, subtotalCents, shippingCents: shipping.amountCents, shippingLabel: shipping.label, totalCents: fee.buyerTotalCents };
 }
 
-export type Transition = { status: "PAID" | "CANCELLED" | "OPEN" | "INVOICED"; action: "mark_paid" | "cancel_invoice" | "promote_backup" | "reopen" | "none" };
+export type Transition = { status: "PAID" | "HELD" | "CANCELLED" | "OPEN" | "INVOICED"; action: "mark_paid" | "hold" | "cancel_invoice" | "promote_backup" | "reopen" | "none" };
 
 export function invoiceTransition(invoiceStatus: InvoiceStatus, expired: boolean, backupAvailable: boolean): Transition {
   if (invoiceStatus === "PAID" || invoiceStatus === "MARKED_AS_PAID") return { status: "PAID", action: "mark_paid" };
+  // A paid deposit holds the item past the claim deadline; only full payment moves it on.
+  if (invoiceStatus === "PARTIALLY_PAID") return { status: "HELD", action: "hold" };
   if (invoiceStatus === "CANCELLED" && expired) return backupAvailable ? { status: "INVOICED", action: "promote_backup" } : { status: "OPEN", action: "reopen" };
   if ((invoiceStatus === "SENT" || invoiceStatus === "UNPAID") && expired) return { status: "INVOICED", action: "cancel_invoice" };
   return { status: "INVOICED", action: "none" };
+}
+
+export function depositCents(totalCents: number, depositBasisPoints: number): number {
+  if (!Number.isInteger(totalCents) || totalCents <= 0) throw new Error("deposit needs a positive integer total");
+  if (!Number.isInteger(depositBasisPoints) || depositBasisPoints < 1 || depositBasisPoints > 10000) throw new Error("deposit must be between 0.01% and 100%");
+  return Math.ceil((totalCents * depositBasisPoints) / 10000);
+}
+
+export function feeLineTitle(policy: FeePolicy): string {
+  return policy === "split" ? "G&S fee (split)" : "G&S fee (buyer pays)";
 }

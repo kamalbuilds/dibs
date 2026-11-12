@@ -344,3 +344,9 @@ h1 { margin: 7px 0 12px; font: 500 43px/1 var(--font-display); letter-spacing: -
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+.hold-toggle { display: flex; align-items: center; gap: 6px; min-height: 40px; font-size: 12px; white-space: nowrap; }
+.hold-toggle input { accent-color: var(--ink); }
+.status-held { color: var(--focus); }
+.on-paypal { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font: 10px var(--font-numeric); letter-spacing: .04em; }
+.deposit-note { color: var(--secondary); font: 10px var(--font-numeric); }

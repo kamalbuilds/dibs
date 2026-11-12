@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { calculateCart, groupByBuyer, invoiceTransition, resolveClaims, resolveItemRef, type ShippingRules } from "./domain.js";
+import { calculateCart, depositCents, feeLineTitle, groupByBuyer, invoiceTransition, resolveClaims, resolveItemRef, type InvoiceStatus, type ShippingRules } from "./domain.js";
 import {
   addClaim, addEvent, addItem, addOperation, addShipment, buyerClaims, closeSale, createInvoice, createSale, deleteItem, getInvoice, getInvoiceByPayPal,
   getItem, getSaleById, getSaleBySlug, invoiceItems, listClaims, listEvents, listInvoices, listItemClaims, listItems, listOutstandingInvoices,
-  listDraftInvoices, listSalesToClose, matchesOwnerKey, markInvoiceCancelled, markInvoicePaid, nextBackup, nextClaimSequence, publishSale, unbilledClaimCount, unclaimedItems, updateInvoice,
+  listDraftInvoices, listSalesToClose, matchesOwnerKey, markInvoiceCancelled, markInvoiceHeld, markInvoicePaid, nextBackup, nextClaimSequence, publishSale, unbilledClaimCount, unclaimedItems, updateInvoice,
   updateItem, updateItemStatus, updateOperation, type ClaimRow, type EventRow, type InvoiceRow, type ItemRow, type SaleRow,
 } from "./store.js";
-import { cancelInvoice as paypalCancel, createInvoice as paypalCreate, readInvoice as paypalRead, remindInvoice as paypalRemind, sendInvoice as paypalSend, type InvoiceLine } from "./paypal.js";
+import { addTracker, trackerPayload, cancelInvoice as paypalCancel, createInvoice as paypalCreate, readInvoice as paypalRead, remindInvoice as paypalRemind, sendInvoice as paypalSend, type InvoiceLine } from "./paypal.js";
 
 type Listener = (event: EventRow) => void;
 const listeners = new Map<string, Set<Listener>>();
@@ -45,7 +45,7 @@ export function publicSale(slug: string) {
     conditionNotes: item.condition_notes, priceCents: item.price_cents, status: item.status,
     backupCount: Math.max(0, unbilledClaimCount(item.id) - (item.status === "CLAIMED" ? 1 : 0)),
   }));
-  return { id: sale.id, slug: sale.slug, title: sale.title, status: sale.status, closesAtMs: sale.closes_at_ms, items, updatedAtMs: Date.now() };
+  return { id: sale.id, slug: sale.slug, title: sale.title, status: sale.status, closesAtMs: sale.closes_at_ms, depositPercent: sale.deposit_bp / 100, items, updatedAtMs: Date.now() };
 }
 
 export function createNewSale(input: Parameters<typeof createSale>[0]) {
@@ -89,7 +89,7 @@ export function publish(saleId: string): SaleRow {
   return getSaleById(saleId)!;
 }
 
-export async function submitClaims(saleId: string, input: { handle: string; email: string; itemIds: string[]; source?: "web" | "import"; raw?: string | null; atMs?: number; forcedKind?: "claim" | "backup" }): Promise<ClaimRow[]> {
+export async function submitClaims(saleId: string, input: { handle: string; email: string; itemIds: string[]; source?: "web" | "import"; raw?: string | null; atMs?: number; forcedKind?: "claim" | "backup"; hold?: boolean }): Promise<ClaimRow[]> {
   const sale = getSaleById(saleId);
   if (!sale?.published_at_ms || sale.status !== "OPEN" || sale.closes_at_ms <= Date.now()) throw new Error("This sale is closed");
   const allItems = new Map(listItems(saleId).map((item) => [item.id, item]));
@@ -103,7 +103,7 @@ export async function submitClaims(saleId: string, input: { handle: string; emai
     const kind = input.forcedKind === "backup" ? "backup" : item.status === "OPEN" && listItemClaims(itemId).length === 0 ? "claim" : "backup";
     const sequence = nextClaimSequence(saleId);
     const atMs = input.atMs ?? Date.now();
-    const claim = addClaim({ item_id: itemId, sale_id: saleId, handle: input.handle.trim(), email: input.email.trim().toLowerCase(), at_ms: atMs, sequence, kind, source: input.source ?? "web", raw: input.raw ?? null });
+    const claim = addClaim({ item_id: itemId, sale_id: saleId, handle: input.handle.trim(), email: input.email.trim().toLowerCase(), at_ms: atMs, sequence, kind, source: input.source ?? "web", raw: input.raw ?? null, hold: input.hold ? 1 : 0 });
     if (kind === "claim") updateItemStatus(itemId, "CLAIMED");
     event(saleId, kind === "backup" ? "backup_queued" : "claim_received", { handle: claim.handle, atMs, sequence, source: claim.source }, itemId);
     added.push(claim);
@@ -128,7 +128,7 @@ async function issueOneInvoice(sale: SaleRow, buyer: { handle: string; email: st
   const invoice = createInvoice({
     sale_id: sale.id, buyer_handle: buyer.handle, buyer_email: buyer.email, paypal_invoice_id: null, payer_url: null, status: "DRAFT",
     subtotal_cents: totals.subtotalCents, shipping_cents: totals.shippingCents, fee_cents: totals.estimatedFeeCents,
-    total_cents: totals.totalCents, due_at_ms: dueAt,
+    total_cents: totals.totalCents, deposit_cents: buyer.claims.some((claim) => claim.hold) ? depositCents(totals.totalCents, sale.deposit_bp) : null, due_at_ms: dueAt,
   }, buyer.claims.map((claim) => ({ itemId: claim.item_id, claimId: claim.id })));
   event(sale.id, "invoice_started", { invoiceId: invoice.id, handle: buyer.handle, items: itemRows.map((item) => item.number) });
   return finishInvoice(invoice.id);
@@ -151,13 +151,14 @@ export async function closeAndInvoice(saleId: string, dueIntervalMs = 24 * 60 * 
 export async function finishInvoice(invoiceId: string): Promise<InvoiceRow> {
   let invoice = getInvoice(invoiceId);
   if (!invoice) throw new Error("Invoice not found");
-  if (["SENT", "UNPAID", "PAID"].includes(invoice.status)) return invoice;
+  if (["SENT", "UNPAID", "HELD", "PAID"].includes(invoice.status)) return invoice;
   const sale = getSaleById(invoice.sale_id)!;
   const items = invoiceItems(invoice.id);
   const lines: InvoiceLine[] = items.map((item) => ({ title: `#${item.number} ${item.title}`, amountCents: item.price_cents! }));
   const buyerShare = Math.max(0, invoice.total_cents - invoice.subtotal_cents - invoice.shipping_cents);
-  if (buyerShare) lines.push({ title: "Estimated PayPal fee share", amountCents: buyerShare });
-  const request = { email: invoice.buyer_email, lines, shippingCents: invoice.shipping_cents, currency: "USD", note: `Claim sale: ${sale.title}`, feePolicy: sale.fee_policy };
+  if (buyerShare) lines.push({ title: feeLineTitle(sale.fee_policy), amountCents: buyerShare });
+  const note = invoice.deposit_cents ? `Claim sale: ${sale.title}. Hold: pay at least $${(invoice.deposit_cents / 100).toFixed(2)} now as a non-refundable deposit, the rest before shipping.` : `Claim sale: ${sale.title}`;
+  const request = { email: invoice.buyer_email, lines, shippingCents: invoice.shipping_cents, currency: "USD", note, feePolicy: sale.fee_policy, minimumDueCents: invoice.deposit_cents };
   const createOp = addOperation("invoice_create", invoice.id, JSON.stringify(request));
   try {
     if (!invoice.paypal_invoice_id) {
@@ -261,11 +262,18 @@ export async function cancelAndPass(invoiceId: string): Promise<void> {
   await markCancelled(invoice);
 }
 
-export function recordShipment(invoiceId: string, carrier: string, tracking: string): void {
+export async function recordShipment(invoiceId: string, carrier: string, tracking: string): Promise<{ trackerId: string }> {
   const invoice = getInvoice(invoiceId);
-  if (!invoice || invoice.status !== "PAID") throw new Error("A buyer can be marked shipped after payment is confirmed");
-  addShipment(invoiceId, carrier, tracking);
-  event(invoice.sale_id, "shipment_recorded", { invoiceId, carrier, tracking, handle: invoice.buyer_handle });
+  if (!invoice?.paypal_invoice_id || invoice.status !== "PAID") throw new Error("A buyer can be marked shipped after payment is confirmed");
+  const remote = await paypalRead(invoice.paypal_invoice_id);
+  const payload = trackerPayload(remote.transactionIds.at(-1), carrier, tracking);
+  const target = `${invoice.id}:${payload.tracking_number}`;
+  const op = addOperation("tracker_add", target, JSON.stringify(payload));
+  const tracker = await addTracker(payload, op.requestId);
+  updateOperation("tracker_add", target, "SUCCEEDED", tracker);
+  addShipment(invoiceId, carrier, tracking, tracker.id);
+  event(invoice.sale_id, "tracking_on_paypal", { invoiceId, carrier, tracking, trackerId: tracker.id, transactionId: tracker.transactionId, handle: invoice.buyer_handle });
+  return { trackerId: tracker.id };
 }
 
 async function releaseBackups(invoice: InvoiceRow): Promise<void> {
@@ -290,6 +298,11 @@ async function markPaid(invoice: InvoiceRow): Promise<void> {
   event(invoice.sale_id, "invoice_paid", { invoiceId: invoice.id, paypalInvoiceId: invoice.paypal_invoice_id, handle: invoice.buyer_handle, totalCents: invoice.total_cents });
 }
 
+function markHeld(invoice: InvoiceRow): void {
+  if (!markInvoiceHeld(invoice)) return;
+  event(invoice.sale_id, "deposit_held", { invoiceId: invoice.id, paypalInvoiceId: invoice.paypal_invoice_id, handle: invoice.buyer_handle, depositCents: invoice.deposit_cents });
+}
+
 async function markCancelled(invoice: InvoiceRow): Promise<void> {
   if (!markInvoiceCancelled(invoice)) return;
   event(invoice.sale_id, "invoice_cancelled", { invoiceId: invoice.id, paypalInvoiceId: invoice.paypal_invoice_id, handle: invoice.buyer_handle });
@@ -307,13 +320,14 @@ export async function reconcileInvoices(now = Date.now()): Promise<void> {
     event(sale.id, "sale_closed", { reason: "claim_deadline", atMs: now });
     try { await closeAndInvoice(sale.id); } catch (error) { event(sale.id, "invoice_failed", { message: error instanceof Error ? error.message : "Invoice operation failed" }); }
   }
-  for (const overdue of listOutstandingInvoices(now)) {
-    const invoice = getInvoice(overdue.id);
+  for (const open of listOutstandingInvoices()) {
+    const invoice = getInvoice(open.id);
     if (!invoice?.paypal_invoice_id) continue;
     try {
       const remote = await paypalRead(invoice.paypal_invoice_id);
-      const transition = invoiceTransition(remote.status as "SENT" | "UNPAID" | "PAID" | "MARKED_AS_PAID" | "CANCELLED", now >= invoice.due_at_ms, nextBackup(invoiceItems(invoice.id)[0]?.id ?? "") !== undefined);
+      const transition = invoiceTransition(remote.status as InvoiceStatus, now >= invoice.due_at_ms, nextBackup(invoiceItems(invoice.id)[0]?.id ?? "") !== undefined);
       if (transition.action === "mark_paid") await markPaid(invoice);
+      else if (transition.action === "hold") markHeld(invoice);
       else if (remote.status === "CANCELLED") await markCancelled(invoice);
       else if (transition.action === "cancel_invoice") {
         const op = addOperation("invoice_cancel", invoice.id, JSON.stringify({ invoiceId: invoice.paypal_invoice_id }));
@@ -339,6 +353,7 @@ export async function handleInvoiceWebhook(paypalInvoiceId: string, eventType: s
   if (!invoice) return;
   const remote = await paypalRead(paypalInvoiceId);
   if (remote.status === "PAID" || eventType === "INVOICING.INVOICE.PAID" && remote.status === "MARKED_AS_PAID") await markPaid(invoice);
+  else if (remote.status === "PARTIALLY_PAID") markHeld(invoice);
   else if (remote.status === "CANCELLED" || eventType === "INVOICING.INVOICE.CANCELLED") await markCancelled(invoice);
 }
 

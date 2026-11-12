@@ -18,6 +18,7 @@ export interface SaleRow {
   fee_policy: FeePolicy;
   fee_rate_bp: number;
   fee_fixed_cents: number;
+  deposit_bp: number;
   owner_key_hash: string;
   created_at_ms: number;
 }
@@ -46,6 +47,7 @@ export interface ClaimRow {
   kind: "claim" | "backup";
   source: "web" | "import";
   raw: string | null;
+  hold: number;
   created_at_ms: number;
 }
 
@@ -61,6 +63,7 @@ export interface InvoiceRow {
   shipping_cents: number;
   fee_cents: number;
   total_cents: number;
+  deposit_cents: number | null;
   due_at_ms: number;
   created_at_ms: number;
 }
@@ -132,6 +135,13 @@ export const db = (() => {
     );
     PRAGMA user_version=1;
   `);
+  const addColumn = (table: string, column: string, ddl: string) => {
+    if (!(database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((row) => row.name === column)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  };
+  addColumn("sales", "deposit_bp", "INTEGER NOT NULL DEFAULT 2000");
+  addColumn("claims", "hold", "INTEGER NOT NULL DEFAULT 0");
+  addColumn("invoices", "deposit_cents", "INTEGER");
+  addColumn("shipments", "paypal_tracker_id", "TEXT");
   return database;
 })();
 
@@ -151,14 +161,15 @@ export function createSale(input: {
   feePolicy: FeePolicy;
   feeRateBasisPoints: number;
   feeFixedCents: number;
+  depositBasisPoints: number;
 }): { sale: SaleRow; ownerKey: string } {
   const id = randomUUID();
   const slug = randomBytes(5).toString("base64url");
   const ownerKey = randomBytes(32).toString("base64url");
   const now = Date.now();
-  db.prepare(`INSERT INTO sales(id,slug,title,invoice_mode,closes_at_ms,shipping_json,fee_policy,fee_rate_bp,fee_fixed_cents,owner_key_hash,created_at_ms)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(id, slug, input.title, input.invoiceMode, now + input.deadlineMinutes * 60_000,
-    JSON.stringify(input.shipping), input.feePolicy, input.feeRateBasisPoints, input.feeFixedCents, hashKey(ownerKey), now);
+  db.prepare(`INSERT INTO sales(id,slug,title,invoice_mode,closes_at_ms,shipping_json,fee_policy,fee_rate_bp,fee_fixed_cents,deposit_bp,owner_key_hash,created_at_ms)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, slug, input.title, input.invoiceMode, now + input.deadlineMinutes * 60_000,
+    JSON.stringify(input.shipping), input.feePolicy, input.feeRateBasisPoints, input.feeFixedCents, input.depositBasisPoints, hashKey(ownerKey), now);
   return { sale: getSaleById(id)!, ownerKey };
 }
 
@@ -208,8 +219,8 @@ export function deleteItem(itemId: string): void {
 export function addClaim(input: Omit<ClaimRow, "id" | "created_at_ms">): ClaimRow {
   const id = randomUUID();
   const created = Date.now();
-  db.prepare("INSERT INTO claims(id,item_id,sale_id,handle,email,at_ms,sequence,kind,source,raw,created_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
-    .run(id, input.item_id, input.sale_id, input.handle, input.email, input.at_ms, input.sequence, input.kind, input.source, input.raw, created);
+  db.prepare("INSERT INTO claims(id,item_id,sale_id,handle,email,at_ms,sequence,kind,source,raw,hold,created_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
+    .run(id, input.item_id, input.sale_id, input.handle, input.email, input.at_ms, input.sequence, input.kind, input.source, input.raw, input.hold, created);
   return db.prepare("SELECT * FROM claims WHERE id=?").get(id) as unknown as ClaimRow;
 }
 
@@ -248,8 +259,8 @@ export function createInvoice(input: Omit<InvoiceRow, "id" | "created_at_ms">, c
   const now = Date.now();
   db.exec("BEGIN IMMEDIATE");
   try {
-    db.prepare(`INSERT INTO invoices(id,sale_id,buyer_handle,buyer_email,paypal_invoice_id,payer_url,status,subtotal_cents,shipping_cents,fee_cents,total_cents,due_at_ms,created_at_ms)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, input.sale_id, input.buyer_handle, input.buyer_email, input.paypal_invoice_id, input.payer_url, input.status, input.subtotal_cents, input.shipping_cents, input.fee_cents, input.total_cents, input.due_at_ms, now);
+    db.prepare(`INSERT INTO invoices(id,sale_id,buyer_handle,buyer_email,paypal_invoice_id,payer_url,status,subtotal_cents,shipping_cents,fee_cents,total_cents,deposit_cents,due_at_ms,created_at_ms)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, input.sale_id, input.buyer_handle, input.buyer_email, input.paypal_invoice_id, input.payer_url, input.status, input.subtotal_cents, input.shipping_cents, input.fee_cents, input.total_cents, input.deposit_cents, input.due_at_ms, now);
     const put = db.prepare("INSERT INTO invoice_items(invoice_id,item_id,claim_id) VALUES(?,?,?)");
     for (const claim of claims) put.run(id, claim.itemId, claim.claimId);
     const itemIds = claims.map((claim) => claim.itemId);
@@ -278,11 +289,13 @@ export function getInvoiceByPayPal(id: string): InvoiceRow | undefined {
 
 export function listInvoices(saleId: string): Array<InvoiceRow & { items: ItemRow[]; shipment?: { carrier: string; tracking: string } }> {
   const rows = db.prepare("SELECT * FROM invoices WHERE sale_id=? ORDER BY created_at_ms DESC").all(saleId) as unknown as InvoiceRow[];
-  return rows.map((row) => ({ ...row, items: db.prepare("SELECT items.* FROM items JOIN invoice_items ON invoice_items.item_id=items.id WHERE invoice_items.invoice_id=? ORDER BY items.number").all(row.id) as unknown as ItemRow[], shipment: db.prepare("SELECT carrier,tracking FROM shipments WHERE invoice_id=?").get(row.id) as { carrier: string; tracking: string } | undefined }));
+  return rows.map((row) => ({ ...row, items: db.prepare("SELECT items.* FROM items JOIN invoice_items ON invoice_items.item_id=items.id WHERE invoice_items.invoice_id=? ORDER BY items.number").all(row.id) as unknown as ItemRow[], shipment: db.prepare("SELECT carrier,tracking,paypal_tracker_id FROM shipments WHERE invoice_id=?").get(row.id) as { carrier: string; tracking: string; paypal_tracker_id: string | null } | undefined }));
 }
 
-export function listOutstandingInvoices(now = Date.now()): InvoiceRow[] {
-  return db.prepare("SELECT * FROM invoices WHERE status IN ('SENT','UNPAID') AND due_at_ms<=?").all(now) as unknown as InvoiceRow[];
+// Every open invoice is read each pass: payment can land long before the deadline.
+// ponytail: one PayPal GET per open invoice per 15 s; switch to webhooks first if sales grow past a few hundred open invoices.
+export function listOutstandingInvoices(): InvoiceRow[] {
+  return db.prepare("SELECT * FROM invoices WHERE status IN ('SENT','UNPAID','HELD')").all() as unknown as InvoiceRow[];
 }
 
 export function listDraftInvoices(): InvoiceRow[] {
@@ -300,11 +313,15 @@ export function invoiceItems(invoiceId: string): ItemRow[] {
 export function markInvoicePaid(invoice: InvoiceRow): boolean {
   db.exec("BEGIN IMMEDIATE");
   try {
-    const changed = db.prepare("UPDATE invoices SET status='PAID' WHERE id=? AND status IN ('DRAFT','SENT','UNPAID')").run(invoice.id);
+    const changed = db.prepare("UPDATE invoices SET status='PAID' WHERE id=? AND status IN ('DRAFT','SENT','UNPAID','HELD')").run(invoice.id);
     if (changed.changes) db.prepare("UPDATE items SET status='PAID' WHERE id IN (SELECT item_id FROM invoice_items WHERE invoice_id=?)").run(invoice.id);
     db.exec("COMMIT");
     return changed.changes > 0;
   } catch (error) { db.exec("ROLLBACK"); throw error; }
+}
+
+export function markInvoiceHeld(invoice: InvoiceRow): boolean {
+  return db.prepare("UPDATE invoices SET status='HELD' WHERE id=? AND status IN ('SENT','UNPAID')").run(invoice.id).changes > 0;
 }
 
 export function markInvoiceCancelled(invoice: InvoiceRow): boolean {
@@ -341,9 +358,9 @@ export function updateOperation(operation: string, target: string, state: "SUCCE
   db.prepare("UPDATE operations SET state=?,response_json=?,updated_at_ms=? WHERE operation=? AND target=?").run(state, JSON.stringify(response), Date.now(), operation, target);
 }
 
-export function addShipment(invoiceId: string, carrier: string, tracking: string): void {
-  db.prepare("INSERT INTO shipments(id,invoice_id,carrier,tracking,created_at_ms) VALUES(?,?,?,?,?) ON CONFLICT(invoice_id) DO UPDATE SET carrier=excluded.carrier,tracking=excluded.tracking,created_at_ms=excluded.created_at_ms")
-    .run(randomUUID(), invoiceId, carrier, tracking, Date.now());
+export function addShipment(invoiceId: string, carrier: string, tracking: string, paypalTrackerId: string): void {
+  db.prepare("INSERT INTO shipments(id,invoice_id,carrier,tracking,paypal_tracker_id,created_at_ms) VALUES(?,?,?,?,?,?) ON CONFLICT(invoice_id) DO UPDATE SET carrier=excluded.carrier,tracking=excluded.tracking,paypal_tracker_id=excluded.paypal_tracker_id,created_at_ms=excluded.created_at_ms")
+    .run(randomUUID(), invoiceId, carrier, tracking, paypalTrackerId, Date.now());
   db.prepare("UPDATE items SET status='SHIPPED' WHERE id IN (SELECT item_id FROM invoice_items WHERE invoice_id=?) AND status='PAID'").run(invoiceId);
 }
 

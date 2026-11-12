@@ -34,6 +34,7 @@ export const SaleInputSchema = z.object({
   feePolicy: z.enum(["seller_absorbs", "split", "buyer_pays"]).default("seller_absorbs"),
   feeRateBasisPoints: z.number().int().nonnegative().max(10000).default(349),
   feeFixedCents: z.number().int().nonnegative().default(49),
+  depositPercent: z.number().int().min(1).max(100).default(20),
 }).strict();
 
 export const ItemInputSchema = z.object({
@@ -49,4 +50,5 @@ export const ClaimInputSchema = z.object({
   email: z.email().max(254),
   itemIds: z.array(z.string().min(1)).min(1).max(200).optional(),
   text: z.string().trim().min(1).max(200).optional(),
+  hold: z.boolean().optional(),
 }).strict().refine((value) => !!value.itemIds?.length || !!value.text, "Select items or enter Mine with item numbers");

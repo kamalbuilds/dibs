@@ -28,7 +28,7 @@ app.post("/api/sales", async (c) => {
     const result = createNewSale({
       title: input.title, deadlineMinutes: input.deadlineMinutes, invoiceMode: input.invoiceMode,
       shipping: { tiers: input.shippingTiers, freeOverCents: input.freeOverCents }, feePolicy: input.feePolicy,
-      feeRateBasisPoints: input.feeRateBasisPoints, feeFixedCents: input.feeFixedCents,
+      feeRateBasisPoints: input.feeRateBasisPoints, feeFixedCents: input.feeFixedCents, depositBasisPoints: input.depositPercent * 100,
     });
     return c.json({ sale: result.sale, ownerKey: result.ownerKey }, 201);
   } catch (error) { return c.json({ error: validationError(error) }, 400); }
@@ -181,8 +181,7 @@ app.post("/api/invoices/:id/ship", async (c) => {
     if (!invoice) return c.json({ error: "Invoice not found" }, 404);
     requireOwner(c, invoice.sale_id);
     const body = z.object({ carrier: z.string().trim().min(1).max(60), tracking: z.string().trim().min(1).max(120) }).strict().parse(await c.req.json());
-    recordShipment(invoice.id, body.carrier, body.tracking);
-    return c.json({ ok: true });
+    return c.json(await recordShipment(invoice.id, body.carrier, body.tracking));
   } catch (error) { return c.json({ error: validationError(error) }, error instanceof z.ZodError ? 400 : 401); }
 });
 
@@ -190,8 +189,8 @@ app.get("/api/receipts/:id", (c) => {
   const invoice = getInvoice(c.req.param("id"));
   if (!invoice) return c.json({ error: "Receipt not found" }, 404);
   const items = db.prepare("SELECT items.number,items.title,items.price_cents FROM items JOIN invoice_items ON invoice_items.item_id=items.id WHERE invoice_items.invoice_id=? ORDER BY items.number").all(invoice.id);
-  const shipment = db.prepare("SELECT carrier,tracking FROM shipments WHERE invoice_id=?").get(invoice.id);
-  return c.json({ invoice: { id: invoice.id, buyerHandle: invoice.buyer_handle, status: invoice.status, subtotalCents: invoice.subtotal_cents, shippingCents: invoice.shipping_cents, feeCents: invoice.fee_cents, totalCents: invoice.total_cents, payerUrl: invoice.payer_url }, items, shipment });
+  const shipment = db.prepare("SELECT carrier,tracking,paypal_tracker_id FROM shipments WHERE invoice_id=?").get(invoice.id);
+  return c.json({ invoice: { id: invoice.id, buyerHandle: invoice.buyer_handle, status: invoice.status, subtotalCents: invoice.subtotal_cents, shippingCents: invoice.shipping_cents, feeCents: invoice.fee_cents, totalCents: invoice.total_cents, depositCents: invoice.deposit_cents, payerUrl: invoice.payer_url }, items, shipment });
 });
 
 app.get("/api/events", (c) => {
