@@ -1,4 +1,4 @@
-import { DibsApiError, parseSaleRef, type ClaimResponse, type DibsClient, type InvoiceRow, type PublicSale, type SellerSale } from "./client.js";
+import { DibsApiError, parseSaleRef, type ClaimResponse, type DibsClient, type InvoiceRow, type PaymentRequirement, type PublicSale, type RefreshedReceipt, type SellerSale } from "./client.js";
 
 // Each tool returns structured data (for the model to reason over) plus one readable summary (for the human).
 export type ToolResult<T> = { data: T; text: string };
@@ -60,6 +60,7 @@ export async function listSale(client: DibsClient, input: { sale: string; seller
 export type ClaimData = {
   sale: { id: string; slug: string; title: string; url: string; closesAt: string };
   handle: string; email: string; hold: boolean; retried: boolean;
+  payment: PaymentRequirement;
   results: Array<{ number: number; title: string; priceCents: number | null; outcome: "first" | "backup"; position: number; label: string; serverTimestamp: string; serverTimestampMs: number }>;
   invoices: Array<{ invoiceId: string; status: string; totalCents: number; total: string; feeCents: number; shippingCents: number; depositCents: number | null; dueAt: string; payUrl: string | null; receiptUrl: string }>;
   nextSteps: string[];
@@ -87,6 +88,7 @@ export async function claim(client: DibsClient, memory: SessionMemory, input: { 
   });
   const invoices = result.invoices.filter((invoice) => invoice.status !== "CANCELLED").map((invoice) => ({ invoiceId: invoice.id, status: invoice.status, totalCents: invoice.total_cents, total: usd(invoice.total_cents), feeCents: invoice.fee_cents, shippingCents: invoice.shipping_cents, depositCents: invoice.deposit_cents ?? null, dueAt: iso(invoice.due_at_ms), payUrl: invoice.payer_url, receiptUrl: `${client.baseUrl}/receipt/${invoice.id}` }));
   memory.remember(sale.id, handle, invoices.map((invoice) => invoice.invoiceId));
+  const payment = result.payment ?? derivePayment(results, result.invoices, sale);
   const won = results.filter((row) => row.outcome === "first");
   const nextSteps: string[] = [];
   if (invoices.some((invoice) => invoice.payUrl)) nextSteps.push(`PayPal has emailed a Goods & Services invoice to ${input.email}. Pay it before the due time or the item rolls to the next backup.`);
@@ -94,8 +96,70 @@ export async function claim(client: DibsClient, memory: SessionMemory, input: { 
   if (results.some((row) => row.outcome === "backup")) nextSteps.push("You are in a backup line: if the buyer ahead of you passes or does not pay in time, Dibs cancels their invoice and PayPal invoices you automatically.");
   if (input.deposit) nextSteps.push(`You asked to hold with a ${sale.depositPercent ?? 20}% deposit; the invoice allows a partial payment that keeps the item held.`);
   nextSteps.push("Check progress any time with invoice_status.");
-  const data: ClaimData = { sale: { id: sale.id, slug: sale.slug, title: sale.title, url: client.saleUrl(sale.slug), closesAt: iso(sale.closesAtMs) }, handle: at(handle), email: input.email, hold: !!input.deposit, retried: !!result.replayed, results, invoices, nextSteps };
-  const text = [result.replayed ? `Already claimed: ${at(handle)} claimed this earlier on "${sale.title}". Nothing new was claimed; this is the original result.` : `Claim received for ${at(handle)} on "${sale.title}".`, ...results.map((row) => `${pocket(row.number)} ${row.title} (${usd(row.priceCents)}): ${row.label} · server time ${row.serverTimestamp}`), ...invoices.map((invoice) => `PayPal invoice ${invoice.invoiceId}: ${invoice.status}, ${invoice.total}, due ${invoice.dueAt}${invoice.payUrl ? `, pay at ${invoice.payUrl}` : ""}`), "Next:", ...nextSteps.map((step) => `- ${step}`)].join("\n");
+  const data: ClaimData = { sale: { id: sale.id, slug: sale.slug, title: sale.title, url: client.saleUrl(sale.slug), closesAt: iso(sale.closesAtMs) }, handle: at(handle), email: input.email, hold: !!input.deposit, retried: !!result.replayed, payment, results, invoices, nextSteps };
+  const text = [result.replayed ? `Already claimed: ${at(handle)} claimed this earlier on "${sale.title}". Nothing new was claimed; this is the original result.` : `Claim received for ${at(handle)} on "${sale.title}".`, ...results.map((row) => `${pocket(row.number)} ${row.title} (${usd(row.priceCents)}): ${row.label} · server time ${row.serverTimestamp}`), ...invoices.map((invoice) => `PayPal invoice ${invoice.invoiceId}: ${invoice.status}, ${invoice.total}, due ${invoice.dueAt}${invoice.payUrl ? `, pay at ${invoice.payUrl}` : ""}`), paymentLine(payment), "Next:", ...nextSteps.map((step) => `- ${step}`)].join("\n");
+  return { data, text };
+}
+
+// Older Dibs servers do not send `payment`; build the same 402-style summary from their invoice rows (never invented).
+function derivePayment(results: ClaimData["results"], rows: InvoiceRow[], sale: PublicSale): PaymentRequirement {
+  const base = { amount: null, amountDueNow: null, invoiceId: null, paypalInvoiceId: null, payUrl: null, expiresAt: null, invoiceExpectedAt: null };
+  if (!results.some((row) => row.outcome === "first")) return { ...base, status: "backup_waiting", httpStatusEquivalent: 202, message: "You are a backup. Nothing to pay unless the buyer ahead passes; then Dibs sends you a PayPal invoice." };
+  const money = (cents: number) => ({ value: (cents / 100).toFixed(2), currency: "USD" });
+  const open = rows.find((row) => ["SENT", "UNPAID", "HELD"].includes(row.status) && row.payer_url);
+  if (open) return { ...base, status: "payment_required", httpStatusEquivalent: 402, amount: money(open.total_cents), amountDueNow: money(open.deposit_cents && open.status !== "HELD" ? open.deposit_cents : open.total_cents), invoiceId: open.id, paypalInvoiceId: open.paypal_invoice_id ?? null, payUrl: open.payer_url, expiresAt: iso(open.due_at_ms), message: "Pay the PayPal Goods & Services invoice before it expires, or the item rolls to the next backup." };
+  return { ...base, status: "pending_invoice", httpStatusEquivalent: 202, invoiceExpectedAt: iso(sale.closesAtMs), message: "No invoice yet: PayPal invoices go out when claims close, or right after a first claim, depending on the sale." };
+}
+
+function paymentLine(payment: PaymentRequirement): string {
+  switch (payment.status) {
+    case "payment_required": return `402-style payment required: ${payment.amount!.value} ${payment.amount!.currency}${payment.amountDueNow && payment.amountDueNow.value !== payment.amount!.value ? ` (${payment.amountDueNow.value} due now)` : ""} on PayPal invoice ${payment.paypalInvoiceId ?? payment.invoiceId}, pay at ${payment.payUrl}, expires ${payment.expiresAt}. Then call await_payment.`;
+    case "pending_invoice": return `Payment pending_invoice: ${payment.message}${payment.invoiceExpectedAt ? ` Expected by ${payment.invoiceExpectedAt}.` : ""}`;
+    case "paid": return `Payment: paid (${payment.amount?.value} ${payment.amount?.currency}).`;
+    default: return `Payment: ${payment.status}. ${payment.message}`;
+  }
+}
+
+export type AwaitPaymentData = {
+  invoiceId: string; buyer: string; finalStatus: string; outcome: "paid" | "cancelled" | "timeout"; state: string;
+  amount: { value: string; currency: string }; payUrl: string | null; polls: number; paypalChecks: number; elapsedSeconds: number; timedOut: boolean;
+  history: Array<{ at: string; status: string; checkedPayPal: boolean }>;
+};
+
+const FINAL = new Set(["PAID", "MARKED_AS_PAID", "CANCELLED"]);
+
+// Polls Dibs' on-demand PayPal refresh until the invoice is PAID or CANCELLED, or the timeout passes.
+export async function awaitPayment(client: DibsClient, memory: SessionMemory, input: { invoiceId?: string; sale?: string; handle?: string; timeoutSeconds?: number; intervalSeconds?: number },
+  options: { sleep?: (ms: number) => Promise<void>; now?: () => number; onPoll?: (poll: number, status: string, elapsedMs: number, timeoutMs: number) => Promise<void> | void } = {}): Promise<ToolResult<AwaitPaymentData>> {
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const now = options.now ?? Date.now;
+  let invoiceId = input.invoiceId;
+  if (!invoiceId && input.sale && input.handle) {
+    const sale = await client.publicSale(parseSaleRef(input.sale));
+    invoiceId = memory.recall(sale.id, input.handle).at(-1);
+  }
+  if (!invoiceId) throw new DibsApiError("Give the invoiceId from the claim result (payment.invoiceId), or the sale and handle used to claim in this session.", 400, "await_payment");
+  const timeoutMs = Math.round((input.timeoutSeconds ?? 120) * 1000);
+  const intervalMs = Math.round((input.intervalSeconds ?? 4) * 1000);
+  const started = now();
+  const history: AwaitPaymentData["history"] = [];
+  let latest: RefreshedReceipt;
+  let paypalChecks = 0;
+  for (;;) {
+    latest = await client.refreshInvoice(invoiceId);
+    if (latest.refresh.checkedPayPal) paypalChecks += 1;
+    history.push({ at: iso(now()), status: latest.invoice.status, checkedPayPal: latest.refresh.checkedPayPal });
+    await options.onPoll?.(history.length, latest.invoice.status, now() - started, timeoutMs);
+    if (FINAL.has(latest.invoice.status) || now() - started + intervalMs > timeoutMs) break;
+    await sleep(intervalMs);
+  }
+  const status = latest.invoice.status;
+  const outcome = status === "CANCELLED" ? "cancelled" : FINAL.has(status) ? "paid" : "timeout";
+  const elapsedSeconds = Math.round((now() - started) / 1000);
+  const data: AwaitPaymentData = { invoiceId, buyer: at(latest.invoice.buyerHandle), finalStatus: status, outcome, state: describeState(status, latest.invoice.dueAtMs ?? null), amount: { value: (latest.invoice.totalCents / 100).toFixed(2), currency: "USD" }, payUrl: latest.invoice.payerUrl, polls: history.length, paypalChecks, elapsedSeconds, timedOut: outcome === "timeout", history: history.slice(-10) };
+  const text = outcome === "paid" ? `PAID: invoice ${invoiceId} for ${data.buyer}, ${data.amount.value} USD. ${data.state}. Confirmed after ${elapsedSeconds}s (${paypalChecks} PayPal read${paypalChecks === 1 ? "" : "s"}).`
+    : outcome === "cancelled" ? `CANCELLED: invoice ${invoiceId} for ${data.buyer} was cancelled; the item passed to the next backup.`
+    : `Still ${status} after ${elapsedSeconds}s: invoice ${invoiceId} for ${data.buyer}, ${data.amount.value} USD.${data.payUrl ? ` Pay at ${data.payUrl}.` : ""} Call await_payment again to keep waiting.`;
   return { data, text };
 }
 
