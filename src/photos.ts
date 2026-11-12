@@ -7,7 +7,7 @@ import type { Box } from "./ai-schemas.js";
 const dataDir = () => process.env.DATA_DIR || "./data";
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-export function boxToPixels(box: Box, width: number, height: number, pad = 0.02): { left: number; top: number; width: number; height: number } {
+export function boxToPixels(box: Box, width: number, height: number, pad = 0.008): { left: number; top: number; width: number; height: number } {
   const left = clamp(Math.round(clamp(box.x - pad, 0, 1) * width), 0, width - 1);
   const top = clamp(Math.round(clamp(box.y - pad, 0, 1) * height), 0, height - 1);
   const right = Math.round(clamp(box.x + box.w + pad, 0, 1) * width);
@@ -20,7 +20,7 @@ export async function normalizeSalePhoto(image: Buffer): Promise<Buffer> {
   return sharp(image).rotate().resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
 }
 
-export async function cropToWebp(image: Buffer, box: Box, pad = 0.02): Promise<Buffer> {
+export async function cropToWebp(image: Buffer, box: Box, pad = 0.008): Promise<Buffer> {
   const { width = 0, height = 0 } = await sharp(image).metadata();
   return sharp(image).extract(boxToPixels(box, width, height, pad)).resize({ width: 800, height: 800, fit: "inside", withoutEnlargement: true }).webp({ quality: 88 }).toBuffer();
 }

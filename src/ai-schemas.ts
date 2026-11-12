@@ -4,6 +4,18 @@ const unit = z.number().min(0).max(1);
 export const BoxSchema = z.object({ x: unit, y: unit, w: unit, h: unit });
 export type Box = z.infer<typeof BoxSchema>;
 
+// The vision model answers in its native box_2d [ymin, xmin, ymax, xmax] on a 0-1000 grid; BoxSchema then holds it to 0..1.
+export function withBoxes(raw: unknown): unknown {
+  const items = (raw as { items?: unknown })?.items;
+  if (!Array.isArray(items)) return raw;
+  return { ...(raw as object), items: items.map((item) => {
+    const { box_2d: b, ...rest } = item as { box_2d?: unknown };
+    if (!Array.isArray(b) || b.length !== 4 || !b.every((v) => typeof v === "number")) return rest;
+    const [ymin, xmin, ymax, xmax] = (b as number[]).map((v) => v / 1000);
+    return { ...rest, box: { x: xmin, y: ymin, w: xmax - xmin, h: ymax - ymin } };
+  }) };
+}
+
 export const VisionItemSchema = z.object({
   title: z.string().trim().min(1),
   box: BoxSchema,

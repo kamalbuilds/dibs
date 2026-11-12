@@ -1,6 +1,6 @@
 import { groundVisionItem, linkThreadEvents } from "./domain.js";
 import { assertPhoto } from "./photos.js";
-import { ThreadModelSchema, VisionSchema, type ThreadEvent, type VisionResult } from "./ai-schemas.js";
+import { ThreadModelSchema, VisionSchema, withBoxes, type ThreadEvent, type VisionResult } from "./ai-schemas.js";
 
 export class AiOutputError extends Error {}
 
@@ -8,9 +8,9 @@ export const aiModel = () => process.env.AI_MODEL || "google/gemini-3.8-flash";
 
 const visionJsonSchema = {
   type: "object", additionalProperties: false, required: ["items"], properties: {
-    items: { type: "array", items: { type: "object", additionalProperties: false, required: ["title", "set_or_platform", "condition_notes", "read_text", "position", "confidence", "box"], properties: {
+    items: { type: "array", items: { type: "object", additionalProperties: false, required: ["title", "set_or_platform", "condition_notes", "read_text", "position", "confidence", "box_2d"], properties: {
       title: { type: "string" },
-      box: { type: "object", additionalProperties: false, required: ["x", "y", "w", "h"], properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 }, w: { type: "number", minimum: 0, maximum: 1 }, h: { type: "number", minimum: 0, maximum: 1 } } }, read_text: { type: "string" }, set_or_platform: { type: ["string", "null"] }, condition_notes: { type: ["string", "null"] }, position: { type: "integer", minimum: 1 }, confidence: { type: "number", minimum: 0, maximum: 1 },
+      box_2d: { type: "array", minItems: 4, maxItems: 4, items: { type: "integer", minimum: 0, maximum: 1000 } }, read_text: { type: "string" }, set_or_platform: { type: ["string", "null"] }, condition_notes: { type: ["string", "null"] }, position: { type: "integer", minimum: 1 }, confidence: { type: "number", minimum: 0, maximum: 1 },
     } } },
   },
 } as const;
@@ -52,11 +52,11 @@ async function completion<T>(instruction: string, content: unknown[], jsonSchema
 
 export async function identifyItems(image: Buffer, mimeType: string): Promise<VisionResult> {
   assertPhoto(mimeType, image.length);
-  const instruction = "Find distinct collectible cards, comics, or retro games a seller could list separately in the photo. Order positions left to right, then top to bottom. Give every item a box: the tight bounding box around that one item as fractions of the image size, x and y for its top-left corner, w and h for its width and height, all between 0 and 1. For each item, copy into read_text the exact label text you can actually read on it (empty string when nothing is legible). Title it from that text; when nothing is legible, give your best identification with a low confidence. Give set/platform when visible, condition notes only for visible defects, and a confidence from 0 to 1. Never guess unreadable details. Low confidence still appears for seller review. Price is always handled by the seller.";
+  const instruction = "Find distinct collectible cards, comics, or retro games a seller could list separately in the photo. Order positions left to right, then top to bottom. Give every item box_2d: the tight bounding box of that one item only, as [ymin, xmin, ymax, xmax] normalized to 0-1000. For each item, copy into read_text the exact label text you can actually read on it (empty string when nothing is legible). Title it from that text; when nothing is legible, give your best identification with a low confidence. Give set/platform when visible, condition notes only for visible defects, and a confidence from 0 to 1. Never guess unreadable details. Low confidence still appears for seller review. Price is always handled by the seller.";
   const result = await completion(instruction, [
     { type: "text", text: "Itemize the collectibles in this real sale photo." },
     { type: "image_url", image_url: { url: `data:${mimeType};base64,${image.toString("base64")}` } },
-  ], visionJsonSchema, (raw) => VisionSchema.parse(JSON.parse(raw)));
+  ], visionJsonSchema, (raw) => VisionSchema.parse(withBoxes(JSON.parse(raw))));
   return { items: result.items.map(groundVisionItem).sort((a, b) => a.position - b.position) };
 }
 

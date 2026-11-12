@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { BoxSchema } from "./ai-schemas.js";
+import { BoxSchema, VisionSchema, withBoxes } from "./ai-schemas.js";
 import { boxToPixels, cropToWebp } from "./photos.js";
 
 describe("bbox to pixel crop", () => {
@@ -26,6 +26,13 @@ describe("bbox to pixel crop", () => {
     expect(BoxSchema.safeParse({ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }).success).toBe(true);
     expect(BoxSchema.safeParse({ x: 1.2, y: 0.2, w: 0.3, h: 0.4 }).success).toBe(false);
     expect(BoxSchema.safeParse({ x: 0.1, y: -0.1, w: 0.3, h: 0.4 }).success).toBe(false);
+  });
+
+  it("converts the model's box_2d grid to a 0..1 box and rejects inverted boxes", () => {
+    const item = { title: "Irene Adler", set_or_platform: null, condition_notes: null, read_text: "IRENE ADLER", position: 1, confidence: 0.9 };
+    expect(VisionSchema.parse(withBoxes({ items: [{ ...item, box_2d: [100, 250, 600, 500] }] })).items[0].box).toEqual({ x: 0.25, y: 0.1, w: 0.25, h: 0.5 });
+    expect(VisionSchema.safeParse(withBoxes({ items: [{ ...item, box_2d: [600, 500, 100, 250] }] })).success).toBe(false);
+    expect(VisionSchema.safeParse(withBoxes({ items: [{ ...item }] })).success).toBe(false);
   });
 
   it("crops the boxed region out of a real image", async () => {
