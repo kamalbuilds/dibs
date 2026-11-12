@@ -21,7 +21,7 @@ export type DocketRow = {
 const UNPAID = new Set(["INVOICED", "SENT", "UNPAID", "DRAFT", "HELD"]);
 const PAID = new Set(["PAID", "MARKED_AS_PAID", "SHIPPED"]);
 const clock = (ms: number) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(ms);
-const COLS_KEY = "dibs-docket-columns:v1";
+const COLS_KEY = "dibs-docket-columns:v2";
 
 function useNarrow(query = "(max-width: 700px)") {
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(query).matches);
