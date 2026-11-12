@@ -4,11 +4,13 @@ import { z } from "zod";
 import { ClaimInputSchema, ItemInputSchema, SaleInputSchema, ThreadSchema } from "./ai-schemas.js";
 import { aiModel, identifyItems, parseThread } from "./ai.js";
 import { parseClaimCommand } from "./domain.js";
-import { db, getInvoice, getItem, getSaleById, listItems, listInvoices } from "./store.js";
+import { db, getInvoice, getItem, getSaleById, listItemClaims, listItems, listInvoices, type ClaimRow } from "./store.js";
 import { assertPhoto, cropToWebp, itemPhotoFromUpload, normalizeSalePhoto, readItemPhoto, saveSalePhoto } from "./photos.js";
 import { compsConfigured } from "./comps.js";
-import { addSaleItem, archive, attachItemPhoto, itemPhotoUrl, refreshComps, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, subscribe, retryInvoice } from "./service.js";
+import { addSaleItem, archive, attachItemPhoto, itemPhotoUrl, refreshComps, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, ClaimReplay, subscribe, retryInvoice } from "./service.js";
 import { verifyWebhook } from "./paypal.js";
+import { getConnInfo } from "@hono/node-server/conninfo";
+import { claimLimitPerHandle, claimLimitPerIp } from "./rate-limit.js";
 
 export const app = new Hono();
 const missingSetup = () => ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "OPENROUTER_API_KEY"].filter((key) => !process.env[key]);
@@ -156,15 +158,44 @@ app.post("/api/sales/:id/close", async (c) => {
   } catch (error) { return c.json({ error: validationError(error) }, 400); }
 });
 
+// Fly sets Fly-Client-IP at its proxy; locally fall back to the socket address.
+function clientIp(c: Context): string {
+  const fly = c.req.header("fly-client-ip");
+  if (fly) return fly;
+  try { return getConnInfo(c).remote.address ?? "unknown"; } catch { return "unknown"; }
+}
+
+function tooMany(c: Context, retryAfterSeconds: number, scope: string) {
+  c.header("Retry-After", String(retryAfterSeconds));
+  return c.json({ error: `Too many claim attempts ${scope}. Try again in ${retryAfterSeconds}s.`, retryAfterSeconds }, 429);
+}
+
+// position: 0 for the first claimant, N for backup N, read from the item's ordered queue.
+const claimView = (claim: ClaimRow) => {
+  const index = listItemClaims(claim.item_id).findIndex((row) => row.id === claim.id);
+  return { itemId: claim.item_id, handle: claim.handle, atMs: claim.at_ms, sequence: claim.sequence, kind: claim.kind, position: Math.max(0, index) };
+};
+
 app.post("/api/sales/:id/claims", async (c) => {
+  const ipLimit = claimLimitPerIp.check(clientIp(c));
+  if (!ipLimit.ok) return tooMany(c, ipLimit.retryAfterSeconds, "from this connection");
   try {
     const sale = getSaleById(c.req.param("id"));
     if (!sale?.published_at_ms) return c.json({ error: "Sale not found" }, 404);
     const input = ClaimInputSchema.parse(await c.req.json());
+    const handleLimit = claimLimitPerHandle.check(`${sale.id}:${input.handle.trim().replace(/^@/, "").toLowerCase()}`);
+    if (!handleLimit.ok) return tooMany(c, handleLimit.retryAfterSeconds, `for ${input.handle}`);
     const parsed = input.text ? parseClaimCommand(input.text, listItems(sale.id)) : { itemIds: input.itemIds ?? [], unresolved: [] };
     if (!parsed.itemIds.length || parsed.unresolved.length) return c.json({ error: parsed.unresolved.length ? `Review item references: ${parsed.unresolved.join(", ")}` : "Enter item numbers to claim" }, 400);
-    const claims = await submitClaims(sale.id, { ...input, itemIds: parsed.itemIds });
-    return c.json({ claims: claims.map((claim) => ({ itemId: claim.item_id, handle: claim.handle, atMs: claim.at_ms, sequence: claim.sequence, kind: claim.kind })), invoices: listInvoices(sale.id).filter((invoice) => invoice.buyer_handle.toLowerCase() === input.handle.toLowerCase()) }, 201);
+    const invoicesFor = () => listInvoices(sale.id).filter((invoice) => invoice.buyer_handle.toLowerCase() === input.handle.toLowerCase());
+    try {
+      const claims = await submitClaims(sale.id, { ...input, itemIds: parsed.itemIds });
+      return c.json({ claims: claims.map(claimView), invoices: invoicesFor(), replayed: false }, 201);
+    } catch (error) {
+      // Same handle, email and items as an earlier claim: return that claim (and its invoice) so a retry is safe.
+      if (error instanceof ClaimReplay) return c.json({ claims: error.claims.map(claimView), invoices: invoicesFor(), replayed: true }, 200);
+      throw error;
+    }
   } catch (error) { return c.json({ error: validationError(error) }, error instanceof z.ZodError ? 400 : 409); }
 });
 

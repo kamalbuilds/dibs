@@ -143,6 +143,11 @@ export function publish(saleId: string): SaleRow {
   return getSaleById(saleId)!;
 }
 
+// Thrown (not returned) so callers that treat a repeat as an error keep doing so; the claim route turns it into the original result.
+export class ClaimReplay extends Error {
+  constructor(readonly claims: ClaimRow[]) { super("This handle already claimed the selected item"); }
+}
+
 export async function submitClaims(saleId: string, input: { handle: string; email: string; itemIds: string[]; source?: "web" | "import"; raw?: string | null; atMs?: number; forcedKind?: "claim" | "backup"; hold?: boolean }): Promise<ClaimRow[]> {
   const sale = getSaleById(saleId);
   if (!sale?.published_at_ms || sale.archived_at_ms || sale.status !== "OPEN" || sale.closes_at_ms <= Date.now()) throw new Error("This sale is closed");
@@ -150,10 +155,13 @@ export async function submitClaims(saleId: string, input: { handle: string; emai
   const selected = [...new Set(input.itemIds)];
   if (!selected.length || selected.some((id) => !allItems.has(id))) throw new Error("Select valid sale items");
   const added: ClaimRow[] = [];
+  const held: ClaimRow[] = [];
+  const sameHandle = (claim: ClaimRow) => claim.handle.trim().toLocaleLowerCase("en-US") === input.handle.trim().toLocaleLowerCase("en-US");
   for (const itemId of selected) {
     const item = allItems.get(itemId)!;
+    const prior = listItemClaims(itemId).find(sameHandle);
+    if (prior) { held.push(prior); continue; }
     if (!item.price_cents || ["PAID", "SHIPPED"].includes(item.status)) throw new Error(`Item #${item.number} cannot be claimed`);
-    if (listItemClaims(itemId).some((claim) => claim.handle.toLocaleLowerCase("en-US") === input.handle.toLocaleLowerCase("en-US"))) continue;
     const kind = input.forcedKind === "backup" ? "backup" : item.status === "OPEN" && listItemClaims(itemId).length === 0 ? "claim" : "backup";
     const sequence = nextClaimSequence(saleId);
     const atMs = input.atMs ?? Date.now();
@@ -162,7 +170,11 @@ export async function submitClaims(saleId: string, input: { handle: string; emai
     event(saleId, kind === "backup" ? "backup_queued" : "claim_received", { handle: claim.handle, atMs, sequence, source: claim.source }, itemId);
     added.push(claim);
   }
-  if (!added.length) throw new Error("This handle already claimed the selected item");
+  if (!added.length) {
+    // A retried request (same handle, same email, same items) gets its original claims back instead of an error.
+    if (held.length === selected.length && held.every((claim) => claim.email === input.email.trim().toLowerCase())) throw new ClaimReplay(held);
+    throw new Error("This handle already claimed the selected item");
+  }
   if (sale.invoice_mode === "first_claim") {
     const winners = added.filter((claim) => claim.kind === "claim");
     if (winners.length) await issueForClaims(sale, winners);
