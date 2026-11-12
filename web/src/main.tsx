@@ -240,11 +240,14 @@ function Dashboard() {
     try { await uploadItemPhoto(item.id, file, accessKey); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Could not save photo"); }
   }
 
-  const totals = useMemo(() => (data?.invoices ?? []).reduce((sum, invoice) => ({ subtotal: sum.subtotal + invoice.subtotal_cents, shipping: sum.shipping + invoice.shipping_cents, fees: sum.fees + invoice.fee_cents, total: sum.total + invoice.total_cents }), { subtotal: 0, shipping: 0, fees: 0, total: 0 }), [data]);
+  const totals = useMemo(() => (data?.invoices ?? []).filter((invoice) => invoice.status !== "CANCELLED").reduce((sum, invoice) => ({ subtotal: sum.subtotal + invoice.subtotal_cents, shipping: sum.shipping + invoice.shipping_cents, fees: sum.fees + invoice.fee_cents, total: sum.total + invoice.total_cents }), { subtotal: 0, shipping: 0, fees: 0, total: 0 }), [data]);
   const rowData = useMemo(() => (data?.items ?? []).map((item) => {
-    const itemClaims = (data?.claims ?? []).filter((claim) => claim.item_id === item.id);
-    const invoice = (data?.invoices ?? []).find((record) => record.items.some((part) => part.id === item.id));
+    const itemInvoices = (data?.invoices ?? []).filter((record) => record.items.some((part) => part.id === item.id));
+    // ponytail: a claimant whose invoice for this item was cancelled has been passed over; matched by handle, so a passed buyer who re-claims stays hidden.
+    const passed = new Set(itemInvoices.filter((record) => record.status === "CANCELLED").map((record) => record.buyer_handle.toLowerCase()));
+    const itemClaims = (data?.claims ?? []).filter((claim) => claim.item_id === item.id && !passed.has(claim.handle.toLowerCase()));
     const first = itemClaims[0];
+    const invoice = itemInvoices.find((record) => record.status !== "CANCELLED");
     return { number: `#${String(item.number).padStart(2, "0")}`, photo: "", title: item.title, comps: item.comps ?? null, buyer: first?.handle ? at(first.handle) : "", claimed: first?.at_ms ? time(first.at_ms) : "", backup: Math.max(0, itemClaims.length - 1), subtotal: item.price_cents ?? 0, shipping: invoice?.shipping_cents ?? 0, fee: invoice?.fee_cents ?? 0, total: invoice?.total_cents ?? 0, status: invoice?.status === "HELD" ? "HELD" : item.status ?? "OPEN", due: invoice?.due_at_ms, invoice, item };
   }), [data]);
 
