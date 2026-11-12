@@ -78,3 +78,22 @@ export function ClaimConfirmation({ result, onDismiss }: { result: ClaimResult; 
     <div className="claim-confirm-actions">{result.receiptId && <Link className="button button-primary" to={`/receipt/${result.receiptId}`}>View receipt<ArrowRight size={15} aria-hidden="true"/></Link>}<button type="button" className="button button-secondary" onClick={onDismiss}>Keep browsing</button><span className="claim-confirm-note"><ShieldCheck size={13} aria-hidden="true"/>PayPal Goods &amp; Services</span></div>
   </section>;
 }
+
+export type LiveNote = { id: string; type: string; itemId: string | null; handle: string | null; atMs: number };
+
+/* Live ticker on the buyer page: rollovers, fresh claims and payments arrive over SSE and read as a one-line moment. */
+export function LiveTicker({ notes, items }: { notes: LiveNote[]; items: ClaimItem[] }) {
+  if (!notes.length) return null;
+  const text = (note: LiveNote) => {
+    const item = items.find((row) => row.id === note.itemId);
+    const no = item ? pocket(item.number) : "a pocket";
+    const who = note.handle ? at(note.handle) : "The next backup";
+    switch (note.type) {
+      case "backup_promoted": return { tag: "ROLLOVER", line: <>{no} passed to the backup line. <b>{who}</b> moved up and gets the PayPal invoice.</> };
+      case "item_reopened": return { tag: "REOPENED", line: <>{no} is open again. No one was left in the backup line.</> };
+      case "invoice_paid": return { tag: "PAID", line: <>An invoice was paid through PayPal.</> };
+      default: return { tag: "CLAIM", line: <><b>{who}</b> called dibs on {no}.</> };
+    }
+  };
+  return <div className="live-ticker" role="log" aria-live="polite">{notes.map((note) => { const { tag, line } = text(note); return <p key={note.id} className={`live-note live-note-${note.type}`}><span>{tag}</span><em>{line}</em></p>; })}</div>;
+}

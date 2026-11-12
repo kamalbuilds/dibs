@@ -202,3 +202,16 @@
 .setup-operators ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
 .setup-operators li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--rule); padding: 4px 0; }
 .grid-empty-state { margin: 0; padding: 20px 14px; color: var(--secondary); font-size: 12px; }
+
+/* ---------- Buyer live ticker (SSE) ---------- */
+.live-ticker { position: fixed; z-index: 30; top: 78px; right: max(16px, calc((100vw - 1220px) / 2)); width: min(380px, calc(100vw - 24px)); display: grid; gap: 6px; pointer-events: none; }
+.live-note { margin: 0; display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; border: 1px solid var(--ink); background: var(--panel); box-shadow: 0 8px 24px rgb(17 17 17 / 12%); font-size: 12px; line-height: 1.35; animation: note-in 260ms cubic-bezier(.2,.8,.2,1); }
+.live-note span { flex: none; padding: 2px 5px; background: var(--ink); color: #fffefa; font: 700 9px var(--font-numeric); letter-spacing: .1em; }
+.live-note-backup_promoted { border-left: 4px solid var(--accent); }
+.live-note-backup_promoted span { background: var(--accent); }
+.live-note-invoice_paid span { background: var(--green); }
+@keyframes note-in { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+.pocket-rolled { animation: pocket-roll 1.4s ease-in-out 2; border-color: var(--accent); }
+@keyframes pocket-roll { 50% { box-shadow: 0 0 0 5px rgb(215 38 30 / 28%); } }
+@media (max-width: 700px) { .live-ticker { top: 64px; left: 12px; right: 12px; width: auto; } }
+.live-note em { font-style: normal; min-width: 0; }
