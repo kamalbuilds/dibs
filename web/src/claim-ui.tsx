@@ -16,6 +16,7 @@ export type ClaimResult = {
   email: string;
   receiptId: string;
   invoiceSent: boolean;
+  replayed?: boolean;
   lines: Array<{ item: ClaimItem; kind: "claim" | "backup"; atMs: number; position: number }>;
 };
 
@@ -63,7 +64,8 @@ export function ClaimConfirmation({ result, onDismiss }: { result: ClaimResult; 
   const headline = won.length ? `Dibs on ${won.map((line) => pocket(line.item.number)).join(", ")}.` : `You're in line for ${backed.map((line) => pocket(line.item.number)).join(", ")}.`;
   return <section ref={ref} tabIndex={-1} className="claim-confirm" role="status" aria-live="polite">
     <button type="button" className="claim-confirm-close icon-button" aria-label="Close confirmation" onClick={onDismiss}><X size={16}/></button>
-    <header className="claim-confirm-head"><div><p className="eyebrow">CLAIM RECEIVED · {at(result.handle)}</p><h2>{headline}</h2></div><div className="claim-confirm-stamp" aria-hidden="true"><span>DIBS</span><small>{won.length ? "CALLED" : "BACKUP"}</small></div></header>
+    <header className="claim-confirm-head"><div><p className="eyebrow">{result.replayed ? "ALREADY YOURS" : "CLAIM RECEIVED"} · {at(result.handle)}</p><h2>{result.replayed ? `Already yours: ${headline.charAt(0).toLowerCase()}${headline.slice(1)}` : headline}</h2></div><div className="claim-confirm-stamp" aria-hidden="true"><span>DIBS</span><small>{result.replayed ? "ON FILE" : won.length ? "CALLED" : "BACKUP"}</small></div></header>
+    {result.replayed && <p className="claim-confirm-replay">Same handle, same email, same pockets: this is your original claim at its original server time. No new PayPal invoice was created.</p>}
     <ul className="claim-confirm-lines">{result.lines.map((line) => <li key={line.item.id} className={line.kind === "claim" ? "is-won" : "is-backup"}>
       <span className="claim-confirm-no">{pocket(line.item.number)}</span>
       <span className="claim-confirm-title">{line.item.title}</span>

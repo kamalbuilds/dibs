@@ -215,3 +215,5 @@
 @keyframes pocket-roll { 50% { box-shadow: 0 0 0 5px rgb(215 38 30 / 28%); } }
 @media (max-width: 700px) { .live-ticker { top: 64px; left: 12px; right: 12px; width: auto; } }
 .live-note em { font-style: normal; min-width: 0; }
+
+.claim-confirm-replay { margin: 0 0 12px; padding: 9px 11px; border: 1px dashed #a9a398; font-size: 12px; line-height: 1.4; color: var(--ink); }

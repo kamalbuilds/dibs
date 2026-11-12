@@ -308,10 +308,10 @@ function SalePage() {
   async function claim() {
     if (!sale) return; setBusy(true); setError(""); setConfirmation(null);
     try {
-      const result = await api<{ claims: Array<{ kind: "claim" | "backup"; itemId: string; atMs: number }>; invoices: Array<{ id: string; status?: string; payer_url: string | null }> }>(`/api/sales/${sale.id}/claims`, { method: "POST", body: JSON.stringify({ handle, email, itemIds: selected, hold }) });
+      const result = await api<{ replayed?: boolean; claims: Array<{ kind: "claim" | "backup"; itemId: string; atMs: number }>; invoices: Array<{ id: string; status?: string; payer_url: string | null }> }>(`/api/sales/${sale.id}/claims`, { method: "POST", body: JSON.stringify({ handle, email, itemIds: selected, hold }) });
       setStamps((current) => ({ ...current, ...Object.fromEntries(result.claims.map((entry) => [entry.itemId, { handle, atMs: entry.atMs }])) }));
       const lines = result.claims.map((entry) => { const item = sale.items.find((row) => row.id === entry.itemId)!; return { item, kind: entry.kind, atMs: entry.atMs, position: entry.kind === "backup" ? (item.backupCount ?? 0) + 1 : 0 }; });
-      setConfirmation({ handle, email, receiptId: result.invoices[0]?.id ?? "", invoiceSent: result.invoices.some((invoice) => !!invoice.payer_url), lines });
+      setConfirmation({ handle, email, receiptId: result.invoices[0]?.id ?? "", invoiceSent: result.invoices.some((invoice) => !!invoice.payer_url), replayed: !!result.replayed, lines });
       setSelected([]); await load();
     }
     catch (err) { setError(err instanceof Error ? err.message : "Claim could not be placed"); }
