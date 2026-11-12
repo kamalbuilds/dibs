@@ -43,14 +43,19 @@ export function buildDocketRows(data: DocketData): DocketRow[] {
       buyer: first?.handle ? at(first.handle) : "", email: first?.email ?? "", claimed: first?.at_ms ? clock(first.at_ms) : "", claimedMs: first?.at_ms ?? null,
       backup: Math.max(0, itemClaims.length - 1), queue: itemClaims.slice(1).map((claim) => `${at(claim.handle)} · ${clock(claim.at_ms)}`),
       rolledFrom: first && cancelled.length ? at(cancelled[0].buyer_handle) : null,
-      subtotal: item.price_cents ?? 0, shipping: invoice?.shipping_cents ?? 0, fee: invoice?.fee_cents ?? 0, total: invoice?.total_cents ?? 0,
+      subtotal: item.price_cents ?? 0, shipping: invoice?.shipping_cents ?? 0, fee: invoice ? buyerFeeCents(invoice) : 0, total: invoice?.total_cents ?? 0,
       status: invoice?.status === "HELD" ? "HELD" : item.status ?? "OPEN", due: invoice?.due_at_ms, invoice, item,
     };
   });
 }
 
+// The fee line PayPal actually bills the buyer. Under a split policy it is part of the full estimate in fee_cents.
+export function buyerFeeCents(invoice: DInvoice): number {
+  return invoice.total_cents - invoice.subtotal_cents - invoice.shipping_cents;
+}
+
 export function docketTotals(invoices: DInvoice[]) {
-  return invoices.filter((invoice) => invoice.status !== "CANCELLED").reduce((sum, invoice) => ({ subtotal: sum.subtotal + invoice.subtotal_cents, shipping: sum.shipping + invoice.shipping_cents, fee: sum.fee + invoice.fee_cents, total: sum.total + invoice.total_cents }), { subtotal: 0, shipping: 0, fee: 0, total: 0 });
+  return invoices.filter((invoice) => invoice.status !== "CANCELLED").reduce((sum, invoice) => ({ subtotal: sum.subtotal + invoice.subtotal_cents, shipping: sum.shipping + invoice.shipping_cents, fee: sum.fee + buyerFeeCents(invoice), total: sum.total + invoice.total_cents }), { subtotal: 0, shipping: 0, fee: 0, total: 0 });
 }
 
 export function buyersToInvoice(rows: DocketRow[]): number {
@@ -83,7 +88,7 @@ export function DocketKpis({ data, rows }: { data: DocketData; rows: DocketRow[]
   const sum = (list: DInvoice[]) => list.reduce((total, invoice) => total + invoice.total_cents, 0);
   const collected = sum(live.filter((invoice) => PAID.has(invoice.status)));
   const outstanding = sum(live.filter((invoice) => UNPAID.has(invoice.status)));
-  const fees = live.reduce((total, invoice) => total + invoice.fee_cents, 0);
+  const fees = live.reduce((total, invoice) => total + buyerFeeCents(invoice), 0);
   const rollovers = data.events.filter((event) => event.type === "backup_promoted").length;
   const open = rows.filter((row) => row.status === "OPEN").length;
   return <dl className="docket-kpis">
@@ -155,7 +160,8 @@ export function DocketGrid({ data, compsReady, live, renderPhoto, renderStatus, 
       { field: "due", headerName: "Due", width: 72, filter: false, cellRenderer: (p: ICellRendererParams<DocketRow>) => p.value && p.data && UNPAID.has(p.data.status) ? renderDue(p.value) : "" },
       { field: "subtotal", headerName: "Items", width: 80, filter: "agNumberColumnFilter", valueFormatter: (p) => money(p.value), cellClass: "cell-money" },
       { field: "shipping", headerName: "Ship", width: 62, filter: false, valueFormatter: (p) => money(p.value), cellClass: "cell-money" },
-      { field: "fee", headerName: "Fee", width: 62, filter: false, valueFormatter: (p) => money(p.value), cellClass: "cell-money" },
+      { field: "fee", headerName: "Buyer fee", width: 78, filter: false, valueFormatter: (p) => money(p.value), cellClass: "cell-money",
+        tooltipValueGetter: (p: ITooltipParams<DocketRow>) => p.data?.invoice && p.data.invoice.fee_cents !== p.value ? `Buyer pays ${money(p.value)} of the ${money(p.data.invoice.fee_cents)} G&S fee` : null },
       { field: "total", headerName: "Total", width: 84, filter: "agNumberColumnFilter", valueFormatter: (p) => money(p.value), cellClass: "cell-money cell-total" },
     ] },
     { colId: "actions", headerName: "Actions", width: 118, suppressSpanHeaderHeight: true, pinned: narrow ? null : "right", sortable: false, filter: false, resizable: false, cellRenderer: (p: ICellRendererParams<DocketRow>) => {
