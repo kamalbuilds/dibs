@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: dibs
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: dibs-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8787"
+      - key: DATA_DIR
+        value: /var/data
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: google/gemini-2.5-flash
+      - key: PUBLIC_URL
+        sync: false
+      - key: DEMO_BUYER_EMAIL
+        sync: false
+      - key: SMOKE_BUYER_EMAIL
+        sync: false
+      - key: PRICECHARTING_TOKEN
+        sync: false

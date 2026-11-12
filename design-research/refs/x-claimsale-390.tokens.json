@@ -1,0 +1,93 @@
+{
+ "title": "(16) Sleepy Troll\u2019s Trading Co. on X: \"\u2728 \ud83c\udff7\ufe0f SLEEPY\u2019S CLAIM SALE RULES &amp; INFO \ud83c\udff7\ufe0f \u2728 It\u2019s That time again, starting the fun at 6:30! \ud83d\udd25 Please Make sure to Read the rules below BEFORE dropping claims! \ud83d\udc47 1. \ud83d\uded2 HOW TO CLAIM \u2022 Drop a \"Claim\" or \"Mine\" + card name/price or card name to lock it in! \u2022 \u23f1\ufe0f First Come,\" / X",
+ "h1": {
+  "text": "Conversation",
+  "font": "-apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+  "size": "14px",
+  "weight": "400",
+  "tracking": "normal",
+  "leading": "normal",
+  "color": "rgb(0, 0, 0)",
+  "bg": "rgba(0, 0, 0, 0)",
+  "radius": "0px",
+  "padding": "0px",
+  "border": "0px solid rgb(0, 0, 0)",
+  "transform": "none",
+  "features": "normal"
+ },
+ "h2": {
+  "text": "To view keyboard shortcuts, press question mark\nView keyboar",
+  "font": "Times",
+  "size": "22.5px",
+  "weight": "700",
+  "tracking": "normal",
+  "leading": "normal",
+  "color": "rgb(231, 233, 234)",
+  "bg": "rgba(0, 0, 0, 0)",
+  "radius": "0px",
+  "padding": "0px",
+  "border": "0px solid rgb(0, 0, 0)",
+  "transform": "none",
+  "features": "normal"
+ },
+ "h3": null,
+ "body": {
+  "text": "To view keyboard shortcuts, press question mark\nView keyboar",
+  "font": "Times",
+  "size": "15px",
+  "weight": "400",
+  "tracking": "normal",
+  "leading": "normal",
+  "color": "rgb(231, 233, 234)",
+  "bg": "rgb(0, 0, 0)",
+  "radius": "0px",
+  "padding": "0px",
+  "border": "0px none rgb(231, 233, 234)",
+  "transform": "none",
+  "features": "normal"
+ },
+ "p": null,
+ "a": {
+  "text": "View keyboard shortcuts",
+  "font": "TwitterChirp, -apple-system, \"system-ui\", \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+  "size": "15px",
+  "weight": "400",
+  "tracking": "normal",
+  "leading": "20px",
+  "color": "rgb(29, 155, 240)",
+  "bg": "rgba(0, 0, 0, 0)",
+  "radius": "0px",
+  "padding": "0px",
+  "border": "0px solid rgb(0, 0, 0)",
+  "transform": "none",
+  "features": "normal"
+ },
+ "button": {
+  "text": "See new posts",
+  "font": "Times",
+  "size": "15px",
+  "weight": "400",
+  "tracking": "normal",
+  "leading": "normal",
+  "color": "rgb(231, 233, 234)",
+  "bg": "rgb(29, 155, 240)",
+  "radius": "9999px",
+  "padding": "4px 16px",
+  "border": "0px solid rgb(0, 0, 0)",
+  "transform": "none",
+  "features": "normal"
+ },
+ "input": null,
+ "loadedFonts": [
+  "TwitterChirp"
+ ],
+ "htmlBg": "rgba(0, 0, 0, 0)",
+ "textLen": 3005,
+ "height": 4052,
+ "url": "https://x.com/TrollBJ0RN/status/2120295558904709295",
+ "viewport": [
+  390,
+  844
+ ],
+ "lumaStddev": 64.1
+}
