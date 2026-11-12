@@ -4,9 +4,10 @@ import {
   addClaim, addEvent, addItem, addOperation, addShipment, buyerClaims, closeSale, createInvoice, createSale, deleteItem, getInvoice, getInvoiceByPayPal,
   getItem, getSaleById, getSaleBySlug, invoiceItems, listClaims, listEvents, listInvoices, listItemClaims, listItems, listOutstandingInvoices,
   listDraftInvoices, listSalesToClose, matchesOwnerKey, markInvoiceCancelled, markInvoiceHeld, markInvoicePaid, nextBackup, nextClaimSequence, publishSale, unbilledClaimCount, unclaimedItems, updateInvoice,
-  setItemPhoto, updateItem, updateItemStatus, updateOperation, type ClaimRow, type EventRow, type InvoiceRow, type ItemRow, type SaleRow,
+  archiveSale, setItemComps, setItemPhoto, updateItem, updateItemStatus, updateOperation, type ClaimRow, type EventRow, type InvoiceRow, type ItemRow, type SaleRow,
 } from "./store.js";
 import { removeItemPhoto, saveItemPhoto } from "./photos.js";
+import { compsConfigured, fetchComps, type Comps } from "./comps.js";
 import { addTracker, trackerPayload, cancelInvoice as paypalCancel, createInvoice as paypalCreate, readInvoice as paypalRead, remindInvoice as paypalRemind, sendInvoice as paypalSend, type InvoiceLine } from "./paypal.js";
 
 type Listener = (event: EventRow) => void;
@@ -34,13 +35,13 @@ export function ownerAuthorized(sale: SaleRow | undefined, key: string | undefin
 export function sellerSale(id: string) {
   const sale = getSaleById(id);
   if (!sale) return null;
-  const items = listItems(id).map((item) => ({ ...item, photoUrl: itemPhotoUrl(item), queue: listItemClaims(item.id).map((claim) => ({ handle: claim.handle, atMs: claim.at_ms, kind: claim.kind })) }));
+  const items = listItems(id).map((item) => ({ ...item, photoUrl: itemPhotoUrl(item), comps: itemComps(item), queue: listItemClaims(item.id).map((claim) => ({ handle: claim.handle, atMs: claim.at_ms, kind: claim.kind })) }));
   return { sale, items, claims: listClaims(id), invoices: listInvoices(id), events: listEvents(id) };
 }
 
 export function publicSale(slug: string) {
   const sale = getSaleBySlug(slug);
-  if (!sale?.published_at_ms) return null;
+  if (!sale?.published_at_ms || sale.archived_at_ms) return null;
   const items = listItems(sale.id).map((item) => ({
     id: item.id, number: item.number, title: item.title, setOrPlatform: item.set_or_platform,
     conditionNotes: item.condition_notes, priceCents: item.price_cents, status: item.status, photoUrl: itemPhotoUrl(item),
@@ -81,6 +82,35 @@ export function removeSaleItem(itemId: string): void {
   event(sale.id, "item_removed", { number: item.number, title: item.title }, item.id);
 }
 
+export const itemComps = (item: ItemRow): Comps | null => item.comps_json ? JSON.parse(item.comps_json) as Comps : null;
+
+// Archiving takes a sale off its public link and stops new claims. Claims already made still settle through the reconciler.
+export function archive(saleId: string): SaleRow {
+  const sale = getSaleById(saleId);
+  if (!sale) throw new Error("Sale not found");
+  if (!sale.archived_at_ms) {
+    archiveSale(saleId);
+    event(saleId, "sale_archived", { title: sale.title });
+  }
+  return getSaleById(saleId)!;
+}
+
+// ponytail: five Channel3 searches at a time; a 200-item binder takes ~40 calls' worth of waiting. Queue it if sales get bigger.
+export async function refreshComps(itemIds: string[]): Promise<Map<string, Comps>> {
+  const results = new Map<string, Comps>();
+  if (!compsConfigured()) return results;
+  for (let start = 0; start < itemIds.length; start += 5) {
+    await Promise.all(itemIds.slice(start, start + 5).map(async (id) => {
+      const item = getItem(id);
+      if (!item) return;
+      const comps = await fetchComps(item.title, item.set_or_platform);
+      setItemComps(id, comps);
+      results.set(id, comps);
+    }));
+  }
+  return results;
+}
+
 export const itemPhotoUrl = (item: ItemRow) => item.photo_at_ms ? `/api/items/${item.id}/photo?v=${item.photo_at_ms}` : null;
 
 // Crops from the AI box and seller replacements both land here; live pages reload on the event.
@@ -105,7 +135,7 @@ export function publish(saleId: string): SaleRow {
 
 export async function submitClaims(saleId: string, input: { handle: string; email: string; itemIds: string[]; source?: "web" | "import"; raw?: string | null; atMs?: number; forcedKind?: "claim" | "backup"; hold?: boolean }): Promise<ClaimRow[]> {
   const sale = getSaleById(saleId);
-  if (!sale?.published_at_ms || sale.status !== "OPEN" || sale.closes_at_ms <= Date.now()) throw new Error("This sale is closed");
+  if (!sale?.published_at_ms || sale.archived_at_ms || sale.status !== "OPEN" || sale.closes_at_ms <= Date.now()) throw new Error("This sale is closed");
   const allItems = new Map(listItems(saleId).map((item) => [item.id, item]));
   const selected = [...new Set(input.itemIds)];
   if (!selected.length || selected.some((id) => !allItems.has(id))) throw new Error("Select valid sale items");

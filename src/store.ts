@@ -21,6 +21,7 @@ export interface SaleRow {
   deposit_bp: number;
   owner_key_hash: string;
   created_at_ms: number;
+  archived_at_ms: number | null;
 }
 
 export interface ItemRow {
@@ -37,6 +38,7 @@ export interface ItemRow {
   source_photo: string | null;
   box_json: string | null;
   photo_at_ms: number | null;
+  comps_json: string | null;
 }
 
 export interface ClaimRow {
@@ -148,6 +150,8 @@ export const db = (() => {
   addColumn("items", "source_photo", "TEXT");
   addColumn("items", "box_json", "TEXT");
   addColumn("items", "photo_at_ms", "INTEGER");
+  addColumn("items", "comps_json", "TEXT");
+  addColumn("sales", "archived_at_ms", "INTEGER");
   return database;
 })();
 
@@ -212,6 +216,14 @@ export function updateItem(itemId: string, item: { title: string; setOrPlatform?
 
 export function setItemPhoto(itemId: string, sourcePhoto: string | null, box: unknown): void {
   db.prepare("UPDATE items SET source_photo=?,box_json=?,photo_at_ms=? WHERE id=?").run(sourcePhoto, box ? JSON.stringify(box) : null, Date.now(), itemId);
+}
+
+export function setItemComps(itemId: string, comps: unknown): void {
+  db.prepare("UPDATE items SET comps_json=? WHERE id=?").run(JSON.stringify(comps), itemId);
+}
+
+export function archiveSale(saleId: string): void {
+  db.prepare("UPDATE sales SET archived_at_ms=? WHERE id=? AND archived_at_ms IS NULL").run(Date.now(), saleId);
 }
 
 export function deleteItem(itemId: string): void {

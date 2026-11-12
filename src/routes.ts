@@ -6,11 +6,13 @@ import { aiModel, identifyItems, parseThread } from "./ai.js";
 import { parseClaimCommand } from "./domain.js";
 import { db, getInvoice, getItem, getSaleById, listItems, listInvoices } from "./store.js";
 import { assertPhoto, cropToWebp, itemPhotoFromUpload, normalizeSalePhoto, readItemPhoto, saveSalePhoto } from "./photos.js";
-import { addSaleItem, attachItemPhoto, itemPhotoUrl, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, subscribe, retryInvoice } from "./service.js";
+import { compsConfigured } from "./comps.js";
+import { addSaleItem, archive, attachItemPhoto, itemPhotoUrl, refreshComps, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, subscribe, retryInvoice } from "./service.js";
 import { verifyWebhook } from "./paypal.js";
 
 export const app = new Hono();
 const missingSetup = () => ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "OPENROUTER_API_KEY"].filter((key) => !process.env[key]);
+const optionalMissing = () => ["CHANNEL3_API_KEY"].filter((key) => !process.env[key]);
 const keyFor = (context: Context) => context.req.header("x-seller-key");
 const validationError = (error: unknown) => error instanceof z.ZodError ? error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ") : error instanceof Error ? error.message : "Request failed";
 
@@ -21,7 +23,7 @@ function requireOwner(context: Context, saleId: string) {
 }
 
 app.get("/api/health", (c) => c.json({ ok: true, missing: missingSetup() }));
-app.get("/api/config", (c) => c.json({ missing: missingSetup(), demoBuyerEmail: process.env.DEMO_BUYER_EMAIL || null, demoSaleSlug: process.env.DEMO_SALE_SLUG || null, aiModel: aiModel(), paypalEnvironment: process.env.PAYPAL_ENV === "live" ? "live" : "sandbox" }));
+app.get("/api/config", (c) => c.json({ missing: missingSetup(), optionalMissing: optionalMissing(), demoBuyerEmail: process.env.DEMO_BUYER_EMAIL || null, demoSaleSlug: process.env.DEMO_SALE_SLUG || null, aiModel: aiModel(), paypalEnvironment: process.env.PAYPAL_ENV === "live" ? "live" : "sandbox" }));
 
 app.post("/api/sales", async (c) => {
   try {
@@ -98,7 +100,8 @@ app.post("/api/sales/:id/vision", async (c) => {
         added.push({ ...withPhoto, photoUrl: itemPhotoUrl(withPhoto), read_text: item.read_text });
       }
     }
-    return c.json({ items: added }, 201);
+    const comps = await refreshComps(added.map((item) => item.id));
+    return c.json({ items: added.map((item) => ({ ...item, comps: comps.get(item.id) ?? null })) }, 201);
   } catch (error) { return c.json({ error: validationError(error) }, 400); }
 });
 
@@ -118,6 +121,22 @@ app.put("/api/items/:id/photo", async (c) => {
     assertPhoto(file.type, file.size);
     const updated = attachItemPhoto(item.id, await itemPhotoFromUpload(Buffer.from(await file.arrayBuffer())), null, null);
     return c.json({ item: { ...updated, photoUrl: itemPhotoUrl(updated) } });
+  } catch (error) { return c.json({ error: validationError(error) }, 400); }
+});
+
+app.post("/api/sales/:id/comps", async (c) => {
+  try {
+    const sale = requireOwner(c, c.req.param("id"));
+    if (!compsConfigured()) return c.json({ error: "Price comps require CHANNEL3_API_KEY" }, 503);
+    const comps = await refreshComps(listItems(sale.id).map((item) => item.id));
+    return c.json({ comps: Object.fromEntries(comps) });
+  } catch (error) { return c.json({ error: validationError(error) }, 400); }
+});
+
+app.post("/api/sales/:id/archive", (c) => {
+  try {
+    const sale = requireOwner(c, c.req.param("id"));
+    return c.json({ sale: { id: sale.id, archivedAtMs: archive(sale.id).archived_at_ms } });
   } catch (error) { return c.json({ error: validationError(error) }, 400); }
 });
 

@@ -44,7 +44,8 @@ export type ThreadEvent = z.infer<typeof ThreadEventSchema>;
 
 export const SaleInputSchema = z.object({
   title: z.string().trim().min(1).max(120),
-  deadlineMinutes: z.number().int().min(5).max(10080).default(1440),
+  // Up to six weeks: a standing binder (a judge demo, a store's always-on case) needs more than a weekend window.
+  deadlineMinutes: z.number().int().min(5).max(60480).default(1440),
   invoiceMode: z.enum(["sale_close", "first_claim"]).default("sale_close"),
   shippingTiers: z.array(z.object({ label: z.string().trim().min(1).max(80), amountCents: z.number().int().nonnegative(), maxSubtotalCents: z.number().int().positive().optional(), maxItems: z.number().int().positive().optional() })).min(1),
   freeOverCents: z.number().int().positive().optional(),
