@@ -142,3 +142,19 @@ describe("claim rate limits", () => {
     for (let i = 0; i < 50; i++) expect(limiter.check("k", 1002).ok).toBe(true);
   });
 });
+
+describe("claim responses", () => {
+  it("only return invoices for the claimer's own handle and email", async () => {
+    const sale = freshSale("first_claim");
+    const [first, second] = (await (await app.request(`/api/public/sales/${sale.slug}`)).json()).items.map((item: { id: string }) => item.id);
+    const a = await (await post(sale.id, { handle: "shared", email: "a@example.com", itemIds: [first] })).json();
+    expect(a.invoices.map((invoice: { buyer_email: string }) => invoice.buyer_email)).toEqual(["a@example.com"]);
+    const b = await post(sale.id, { handle: "@shared".slice(1), email: "b@example.com", itemIds: [second] });
+    expect(b.status).toBe(201);
+    const emails = (await b.json()).invoices.map((invoice: { buyer_email: string }) => invoice.buyer_email);
+    expect(emails).toEqual(["b@example.com"]);
+    const replay = await (await post(sale.id, { handle: "SHARED", email: "A@example.com", itemIds: [first] })).json();
+    expect(replay.replayed).toBe(true);
+    expect(replay.invoices.map((invoice: { buyer_email: string }) => invoice.buyer_email)).toEqual(["a@example.com"]);
+  });
+});

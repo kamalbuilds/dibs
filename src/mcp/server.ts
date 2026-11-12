@@ -1,4 +1,6 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { Hono } from "hono";
 import { z } from "zod";
 import { DibsApiError, DibsClient } from "./client.js";
 import { claim, invoiceStatus, listSale, SessionMemory, type ToolResult } from "./tools.js";
@@ -71,4 +73,20 @@ export function createDibsMcpServer(client = new DibsClient(), memory = new Sess
   }));
 
   return server;
+}
+
+// Streamable HTTP is reachable by anyone who can reach the port, so it runs as a buyer: DIBS_SELLER_KEY is never
+// loaded (a caller may still pass its own sellerKey), each request gets fresh claim memory, and the Host header must
+// be one this server answers on (DNS rebinding protection). Add public hostnames with MCP_ALLOWED_HOSTS=host:port,...
+export function createDibsHttpApp(options: { port: number; baseUrl?: string; fetchImpl?: typeof fetch }) {
+  const client = new DibsClient(options.baseUrl, options.fetchImpl, null);
+  const allowedHosts = [`127.0.0.1:${options.port}`, `localhost:${options.port}`, ...(process.env.MCP_ALLOWED_HOSTS ?? "").split(",").map((host) => host.trim()).filter(Boolean)];
+  const app = new Hono();
+  app.get("/", (c) => c.json({ name: "dibs-mcp", endpoint: "/mcp", dibs: client.baseUrl }));
+  app.all("/mcp", async (c) => {
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true, enableDnsRebindingProtection: true, allowedHosts });
+    await createDibsMcpServer(client, new SessionMemory()).connect(transport);
+    return transport.handleRequest(c.req.raw);
+  });
+  return app;
 }

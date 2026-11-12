@@ -17,7 +17,7 @@ export const DEFAULT_BASE_URL = "https://dibs-claims.fly.dev";
 
 export class DibsClient {
   readonly baseUrl: string;
-  constructor(baseUrl = process.env.DIBS_BASE_URL || DEFAULT_BASE_URL, private readonly fetchImpl: typeof fetch = fetch, readonly sellerKey: string | undefined = process.env.DIBS_SELLER_KEY || undefined) {
+  constructor(baseUrl = process.env.DIBS_BASE_URL || DEFAULT_BASE_URL, private readonly fetchImpl: typeof fetch = fetch, readonly sellerKey: string | null = process.env.DIBS_SELLER_KEY || null) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
   }
 

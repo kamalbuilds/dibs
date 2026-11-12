@@ -187,7 +187,8 @@ app.post("/api/sales/:id/claims", async (c) => {
     if (!handleLimit.ok) return tooMany(c, handleLimit.retryAfterSeconds, `for ${input.handle}`);
     const parsed = input.text ? parseClaimCommand(input.text, listItems(sale.id)) : { itemIds: input.itemIds ?? [], unresolved: [] };
     if (!parsed.itemIds.length || parsed.unresolved.length) return c.json({ error: parsed.unresolved.length ? `Review item references: ${parsed.unresolved.join(", ")}` : "Enter item numbers to claim" }, 400);
-    const invoicesFor = () => listInvoices(sale.id).filter((invoice) => invoice.buyer_handle.toLowerCase() === input.handle.toLowerCase());
+    // The claimer's own invoices only: a handle is typed by the buyer, so it is matched together with their email.
+    const invoicesFor = () => listInvoices(sale.id).filter((invoice) => invoice.buyer_handle.toLowerCase() === input.handle.trim().replace(/^@/, "").toLowerCase() && invoice.buyer_email.toLowerCase() === input.email.trim().toLowerCase());
     try {
       const claims = await submitClaims(sale.id, { ...input, itemIds: parsed.itemIds });
       return c.json({ claims: claims.map(claimView), invoices: invoicesFor(), replayed: false }, 201);

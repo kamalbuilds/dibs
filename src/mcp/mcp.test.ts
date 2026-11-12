@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { DibsApiError, DibsClient, parseSaleRef, type PublicSale, type SellerSale } from "./client.js";
 import { claim, invoiceStatus, listSale, SessionMemory } from "./tools.js";
-import { createDibsMcpServer } from "./server.js";
+import { createDibsHttpApp, createDibsMcpServer } from "./server.js";
 
 const BASE = "https://dibs.test";
 const SALE_ID = "sale-1";
@@ -58,7 +58,7 @@ function mockApi(options: { claimResponse?: unknown; claimStatus?: number; after
     if (path.startsWith("/api/receipts/")) return json(404, { error: "Receipt not found" });
     return json(500, { error: `unmocked ${path}` });
   }) as typeof fetch;
-  return { calls, client: new DibsClient(BASE, fetchImpl, undefined) };
+  return { calls, fetchImpl, client: new DibsClient(BASE, fetchImpl, undefined) };
 }
 
 describe("parseSaleRef", () => {
@@ -220,5 +220,30 @@ describe("MCP server", () => {
     expect(JSON.parse((resource.contents[0] as { text: string }).text).sale.slug).toBe("kJ4emW4");
     const prompt = await client.getPrompt({ name: "claim_from_post", arguments: { post: "Claim sale tonight https://dibs-claims.fly.dev/s/kJ4emW4", want: "Sherlock", handle: "kamal", email: "k@example.com" } });
     expect((prompt.messages[0].content as { text: string }).text).toMatch(/list_sale/);
+  });
+});
+
+describe("Streamable HTTP mode", () => {
+  const rpc = (app: ReturnType<typeof createDibsHttpApp>, host: string, id: number, name: string, args: unknown) => app.request("http://" + host + "/mcp", {
+    method: "POST", headers: { host, "content-type": "application/json", accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
+  });
+
+  it("never uses DIBS_SELLER_KEY, rejects foreign Host headers, and keeps no memory between callers", async () => {
+    process.env.DIBS_SELLER_KEY = KEY;
+    try {
+      const { calls, fetchImpl } = mockApi({ claimResponse: { claims: [{ itemId: "i1", handle: "tomas", atMs: 5, sequence: 1, kind: "claim" }], invoices: [{ ...seller.invoices[1], items: [] }] } });
+      const app = createDibsHttpApp({ baseUrl: BASE, fetchImpl, port: 8790 });
+      const listed = await rpc(app, "127.0.0.1:8790", 1, "list_sale", { sale: "kJ4emW4" });
+      expect(listed.status).toBe(200);
+      expect((await listed.json()).result.structuredContent.queueVisibility).toBe("public");
+      expect(calls.map((call) => call.key)).not.toContain(KEY);
+
+      expect((await rpc(app, "attacker.example:8790", 2, "list_sale", { sale: "kJ4emW4" })).status).toBe(403);
+
+      expect((await rpc(app, "localhost:8790", 3, "claim", { sale: "kJ4emW4", itemNumbers: [1], handle: "tomas", email: "t@example.com" })).status).toBe(200);
+      const status = await (await rpc(app, "localhost:8790", 4, "invoice_status", { sale: "kJ4emW4", handle: "tomas" })).json();
+      expect(status.result.structuredContent.invoices).toEqual([]);
+    } finally { delete process.env.DIBS_SELLER_KEY; }
   });
 });
