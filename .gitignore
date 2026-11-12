@@ -11,3 +11,8 @@ BUILD-REPORT.md
 *.log
 .DS_Store
 .codex-prompt.txt
+.codex-prompt-ui.txt
+.codex-last-ui.md
+.uicraft-read.json
+BUILD-REPORT-UI.md
+.agentctx/

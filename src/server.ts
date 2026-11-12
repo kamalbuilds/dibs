@@ -1,12 +1,11 @@
 import { existsSync } from "node:fs";
 import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { app, runReconciler } from "./routes.js";
+import { mountWeb } from "./static.js";
 import "./store.js";
 
 if (process.env.NODE_ENV === "production" && existsSync("./web/dist")) {
-  app.use("/*", serveStatic({ root: "./web/dist" }));
-  app.get("*", serveStatic({ root: "./web/dist", path: "./web/dist/index.html" }));
+  mountWeb(app);
 } else app.notFound((c) => c.json({ error: "Route not found" }, 404));
 
 const port = Number(process.env.PORT || 8787);
