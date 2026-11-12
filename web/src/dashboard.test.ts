@@ -24,10 +24,10 @@ it("moves the docket row to the backup buyer on the SSE event and keeps the tota
 
   const cell = (row: string, col: string) => document.querySelector(`${row} [col-id="${col}"]`)?.textContent ?? null;
   const dataRow = '.ag-center-cols-container .ag-row[row-index="0"]';
-  const pinnedLeftRow = '.ag-pinned-left-cols-container .ag-row[row-index="0"]';
   await vi.waitFor(() => expect(cell(dataRow, "buyer")).toBe("@alice"), { timeout: 15000 });
   expect(cell(dataRow, "backup")).toBe("1");
-  expect(cell(pinnedLeftRow, "number")).toBe("#01");
+  expect([...document.querySelectorAll(".ag-header-group-text")].map((node) => node.textContent)).toEqual(["Item", "Claim", "Invoice"]);
+  expect(cell(dataRow, "number")).toBe("#01");
   const totals = document.querySelector(".ag-floating-bottom")!;
   expect(totals.textContent).toContain("$31.00");
   expect(totals.querySelector('[col-id="backup"]')).not.toBeNull();
