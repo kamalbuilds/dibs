@@ -59,7 +59,7 @@ export async function listSale(client: DibsClient, input: { sale: string; seller
 
 export type ClaimData = {
   sale: { id: string; slug: string; title: string; url: string; closesAt: string };
-  handle: string; email: string; hold: boolean;
+  handle: string; email: string; hold: boolean; retried: boolean;
   results: Array<{ number: number; title: string; priceCents: number | null; outcome: "first" | "backup"; position: number; label: string; serverTimestamp: string; serverTimestampMs: number }>;
   invoices: Array<{ invoiceId: string; status: string; totalCents: number; total: string; feeCents: number; shippingCents: number; depositCents: number | null; dueAt: string; payUrl: string | null; receiptUrl: string }>;
   nextSteps: string[];
@@ -81,7 +81,8 @@ export async function claim(client: DibsClient, memory: SessionMemory, input: { 
   const after = await client.publicSale(sale.slug).catch(() => sale);
   const results = result.claims.map((entry) => {
     const item = after.items.find((row) => row.id === entry.itemId) ?? sale.items.find((row) => row.id === entry.itemId)!;
-    const position = entry.kind === "backup" ? Math.max(1, after.items.find((row) => row.id === entry.itemId)?.backupCount ?? 1) : 0;
+    // Newer Dibs servers report the claim's place in the item queue; older ones only expose the backup count.
+    const position = entry.kind === "backup" ? Math.max(1, entry.position ?? after.items.find((row) => row.id === entry.itemId)?.backupCount ?? 1) : 0;
     return { number: item.number, title: item.title, priceCents: item.priceCents, outcome: entry.kind === "claim" ? "first" as const : "backup" as const, position, label: entry.kind === "claim" ? "First" : `Backup ${position}`, serverTimestamp: iso(entry.atMs), serverTimestampMs: entry.atMs };
   });
   const invoices = result.invoices.filter((invoice) => invoice.status !== "CANCELLED").map((invoice) => ({ invoiceId: invoice.id, status: invoice.status, totalCents: invoice.total_cents, total: usd(invoice.total_cents), feeCents: invoice.fee_cents, shippingCents: invoice.shipping_cents, depositCents: invoice.deposit_cents ?? null, dueAt: iso(invoice.due_at_ms), payUrl: invoice.payer_url, receiptUrl: `${client.baseUrl}/receipt/${invoice.id}` }));
@@ -93,8 +94,8 @@ export async function claim(client: DibsClient, memory: SessionMemory, input: { 
   if (results.some((row) => row.outcome === "backup")) nextSteps.push("You are in a backup line: if the buyer ahead of you passes or does not pay in time, Dibs cancels their invoice and PayPal invoices you automatically.");
   if (input.deposit) nextSteps.push(`You asked to hold with a ${sale.depositPercent ?? 20}% deposit; the invoice allows a partial payment that keeps the item held.`);
   nextSteps.push("Check progress any time with invoice_status.");
-  const data: ClaimData = { sale: { id: sale.id, slug: sale.slug, title: sale.title, url: client.saleUrl(sale.slug), closesAt: iso(sale.closesAtMs) }, handle: at(handle), email: input.email, hold: !!input.deposit, results, invoices, nextSteps };
-  const text = [`Claim received for ${at(handle)} on "${sale.title}".`, ...results.map((row) => `${pocket(row.number)} ${row.title} (${usd(row.priceCents)}): ${row.label} · server time ${row.serverTimestamp}`), ...invoices.map((invoice) => `Invoice ${invoice.invoiceId}: ${invoice.status}, ${invoice.total}, due ${invoice.dueAt}${invoice.payUrl ? `, pay at ${invoice.payUrl}` : ""}`), "Next:", ...nextSteps.map((step) => `- ${step}`)].join("\n");
+  const data: ClaimData = { sale: { id: sale.id, slug: sale.slug, title: sale.title, url: client.saleUrl(sale.slug), closesAt: iso(sale.closesAtMs) }, handle: at(handle), email: input.email, hold: !!input.deposit, retried: !!result.replayed, results, invoices, nextSteps };
+  const text = [result.replayed ? `Already claimed: ${at(handle)} claimed this earlier on "${sale.title}". Nothing new was claimed; this is the original result.` : `Claim received for ${at(handle)} on "${sale.title}".`, ...results.map((row) => `${pocket(row.number)} ${row.title} (${usd(row.priceCents)}): ${row.label} · server time ${row.serverTimestamp}`), ...invoices.map((invoice) => `PayPal invoice ${invoice.invoiceId}: ${invoice.status}, ${invoice.total}, due ${invoice.dueAt}${invoice.payUrl ? `, pay at ${invoice.payUrl}` : ""}`), "Next:", ...nextSteps.map((step) => `- ${step}`)].join("\n");
   return { data, text };
 }
 

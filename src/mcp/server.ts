@@ -30,7 +30,7 @@ export function createDibsMcpServer(client = new DibsClient(), memory = new Sess
 
   server.registerTool("claim", {
     title: "Claim pockets in a Dibs sale",
-    description: "Call dibs on one or more pockets for a buyer. The Dibs server timestamps the claim and decides the outcome: First (you won it) or Backup N (you are Nth in line and get invoiced automatically if those ahead pass). Winners get one PayPal Goods & Services invoice by email (sent now or when the seller closes the sale, depending on the sale). This places a real claim under the given handle: confirm pocket numbers, handle and email with the user first. Duplicate claims by the same handle are rejected by the server.",
+    description: "Call dibs on one or more pockets for a buyer. The Dibs server timestamps the claim and decides the outcome: First (you won it) or Backup N (you are Nth in line and get invoiced automatically if those ahead pass). Winners get one PayPal Goods & Services invoice by email (sent now or when the seller closes the sale, depending on the sale). This places a real claim under the given handle: confirm pocket numbers, handle and email with the user first. Safe to retry: repeating the same claim (same handle, email and pockets) returns the original result and invoice, marked retried, instead of claiming twice. The server rate-limits claims per connection and per handle (HTTP 429 with a retry time).",
     inputSchema: {
       sale: saleArg,
       itemNumbers: z.array(z.number().int().positive()).min(1).max(50).optional().describe("Pocket numbers to claim, e.g. [3, 7]. Use list_sale to find them."),
@@ -39,12 +39,12 @@ export function createDibsMcpServer(client = new DibsClient(), memory = new Sess
       email: z.email().describe("Email PayPal sends the Goods & Services invoice to."),
       deposit: z.boolean().optional().describe("Hold the pockets with the sale's deposit percentage (partial PayPal payment) instead of paying in full."),
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, async (args) => run(() => claim(client, memory, args)));
 
   server.registerTool("invoice_status", {
     title: "PayPal invoice status for a Dibs buyer",
-    description: "Check a buyer's PayPal Goods & Services invoice on Dibs: state (drafting, sent/awaiting payment, deposit held, paid, cancelled), amount with items, shipping and fee line, due time, pay link, tracking, and whether an unpaid item rolled to a backup. Pass invoiceId (from claim or the receipt link), or sale + handle/email (works for invoices this session created, or for everything with a seller key). Read-only.",
+    description: "Check a buyer's PayPal Goods & Services invoice on Dibs: state (drafting, sent/awaiting payment, deposit held, paid, cancelled), amount with items, shipping and fee line, due time, pay link, tracking, and whether an unpaid item rolled to a backup. Reads Dibs' copy of the PayPal invoice, which Dibs syncs from PayPal every 15 seconds (so PAID can take a few seconds to appear). Pass invoiceId (from claim or the receipt link), or sale + handle/email (works for invoices this session created, or for everything with a seller key). Read-only.",
     inputSchema: {
       invoiceId: z.string().min(1).optional().describe("Dibs invoice id (the id in /receipt/<id>)."),
       sale: saleArg.optional(),

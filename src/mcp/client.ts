@@ -6,7 +6,7 @@ export type PublicSale = { id: string; slug: string; title: string; status: stri
 export type InvoiceRow = { id: string; sale_id?: string; buyer_handle: string; buyer_email: string; paypal_invoice_id?: string | null; payer_url: string | null; status: string; subtotal_cents: number; shipping_cents: number; fee_cents: number; total_cents: number; deposit_cents?: number | null; due_at_ms: number; created_at_ms?: number; items?: Array<{ id: string; number: number; title: string }>; shipment?: { carrier: string; tracking: string; paypal_tracker_id?: string | null } | null };
 export type ClaimRow = { item_id: string; handle: string; email?: string; at_ms: number; kind: string; sequence: number };
 export type SellerSale = { sale: { id: string; slug: string; title: string; status: string; closes_at_ms: number; fee_policy?: string; fee_rate_bp?: number; fee_fixed_cents?: number; invoice_mode?: string }; items: Array<{ id: string; number: number; title: string; price_cents: number | null; status: string; photoUrl?: string | null }>; claims: ClaimRow[]; invoices: InvoiceRow[]; events: Array<{ id: string; type: string; at_ms: number; item_id?: string | null; payload: string }> };
-export type ClaimResponse = { claims: Array<{ itemId: string; handle: string; atMs: number; sequence: number; kind: "claim" | "backup" }>; invoices: InvoiceRow[] };
+export type ClaimResponse = { claims: Array<{ itemId: string; handle: string; atMs: number; sequence: number; kind: "claim" | "backup"; position?: number }>; invoices: InvoiceRow[]; replayed?: boolean };
 export type Receipt = { invoice: { id: string; buyerHandle: string; status: string; subtotalCents: number; shippingCents: number; feeCents: number; totalCents: number; depositCents?: number | null; payerUrl: string | null }; items: Array<{ number: number; title: string; price_cents: number }>; shipment?: { carrier: string; tracking: string; paypal_tracker_id?: string | null } | null };
 
 export class DibsApiError extends Error {
@@ -29,7 +29,10 @@ export class DibsClient {
     try { response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers }); }
     catch (error) { throw new DibsApiError(`Could not reach Dibs at ${this.baseUrl}: ${error instanceof Error ? error.message : String(error)}`, 0, path); }
     const body = await response.json().catch(() => ({})) as { error?: string };
-    if (!response.ok) throw new DibsApiError(body.error || `Dibs returned HTTP ${response.status}`, response.status, path);
+    if (!response.ok) {
+      const retryAfter = response.headers.get("retry-after");
+      throw new DibsApiError(body.error || `Dibs returned HTTP ${response.status}${retryAfter ? `; retry after ${retryAfter}s` : ""}`, response.status, path);
+    }
     return body as T;
   }
 
