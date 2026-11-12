@@ -267,7 +267,7 @@ export async function recordShipment(invoiceId: string, carrier: string, trackin
   if (!invoice?.paypal_invoice_id || invoice.status !== "PAID") throw new Error("A buyer can be marked shipped after payment is confirmed");
   const remote = await paypalRead(invoice.paypal_invoice_id);
   const payload = trackerPayload(remote.transactionIds.at(-1), carrier, tracking);
-  const target = `${invoice.id}:${payload.tracking_number}`;
+  const target = `${invoice.id}:${payload.trackers[0].tracking_number}`;
   const op = addOperation("tracker_add", target, JSON.stringify(payload));
   const tracker = await addTracker(payload, op.requestId);
   updateOperation("tracker_add", target, "SUCCEEDED", tracker);

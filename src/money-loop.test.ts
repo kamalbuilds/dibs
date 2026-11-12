@@ -49,8 +49,9 @@ describe("hold with deposit", () => {
 
 describe("tracking pushed to PayPal", () => {
   it("carries the PayPal transaction id, tracking number and carrier", () => {
-    expect(trackerPayload("0FL39582BL8172154", "usps", "9400100000000000000000")).toEqual({ transaction_id: "0FL39582BL8172154", tracking_number: "9400100000000000000000", status: "SHIPPED", carrier: "USPS", notify_buyer: true });
-    expect(trackerPayload("0FL39582BL8172154", "Pirate Ship", "ABC")).toMatchObject({ carrier: "OTHER", carrier_name_other: "Pirate Ship" });
+    // PayPal rejects a bare tracker with "Tracker Collection is Empty"; the body must be a trackers array.
+    expect(trackerPayload("0FL39582BL8172154", "usps", "9400100000000000000000")).toEqual({ trackers: [{ transaction_id: "0FL39582BL8172154", tracking_number: "9400100000000000000000", status: "SHIPPED", carrier: "USPS", notify_buyer: true }] });
+    expect(trackerPayload("0FL39582BL8172154", "Pirate Ship", "ABC").trackers[0]).toMatchObject({ carrier: "OTHER", carrier_name_other: "Pirate Ship" });
   });
   it("refuses with a typed error when PayPal has no payment transaction", () => {
     expect(() => trackerPayload(undefined, "USPS", "940010")).toThrow(MissingTransactionError);

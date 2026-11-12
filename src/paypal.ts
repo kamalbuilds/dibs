@@ -39,10 +39,10 @@ const CARRIERS = new Set(["USPS", "UPS", "FEDEX", "ONTRAC"]);
 export function trackerPayload(transactionId: string | null | undefined, carrier: string, trackingNumber: string) {
   if (!transactionId) throw new MissingTransactionError("PayPal shows no payment transaction for this invoice, so tracking has nothing to attach to");
   const code = carrier.trim().toUpperCase();
-  return {
+  return { trackers: [{
     transaction_id: transactionId, tracking_number: trackingNumber.trim(), status: "SHIPPED", notify_buyer: true,
     ...(CARRIERS.has(code) ? { carrier: code } : { carrier: "OTHER", carrier_name_other: carrier.trim() }),
-  };
+  }] };
 }
 
 let cachedToken: { value: string; expiresAt: number } | undefined;
@@ -80,8 +80,9 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok) {
     const debugId = response.headers.get("paypal-debug-id");
-    console.error("PayPal API request failed", { status: response.status, debugId, path, details: body?.details });
-    throw new PayPalError(String(body?.message ?? `PayPal returned ${response.status}`), response.status, debugId, body?.details ?? body);
+    console.error("PayPal API request failed", { status: response.status, debugId, path, details: body?.details ?? body?.errors });
+    const nested = (body?.errors as Array<{ details?: Array<{ issue?: string }> }> | undefined)?.[0]?.details?.[0]?.issue;
+    throw new PayPalError(String(body?.message ?? nested ?? `PayPal returned ${response.status}`), response.status, debugId, body?.details ?? body);
   }
   return body as T;
 }
@@ -138,10 +139,16 @@ export async function cancelInvoice(invoiceId: string, requestId: string): Promi
   return result;
 }
 
-export async function addTracker(payload: ReturnType<typeof trackerPayload>, requestId: string): Promise<{ id: string; status: string; transactionId: string }> {
-  await api<unknown>("/v1/shipping/trackers", { method: "POST", headers: { "PayPal-Request-Id": requestId }, body: JSON.stringify(payload) });
+export async function addTracker(body: ReturnType<typeof trackerPayload>, requestId: string): Promise<{ id: string; status: string; transactionId: string }> {
+  const [payload] = body.trackers;
   const id = `${payload.transaction_id}-${payload.tracking_number}`;
-  const tracker = await api<{ transaction_id?: string; status?: string }>(`/v1/shipping/trackers/${encodeURIComponent(id)}`);
+  let posted: unknown;
+  try {
+    const result = await api<{ errors?: Array<{ message?: string }> }>("/v1/shipping/trackers", { method: "POST", headers: { "PayPal-Request-Id": requestId }, body: JSON.stringify(body) });
+    if (result?.errors?.length) posted = new Error(result.errors.map((error) => error.message).join("; "));
+  } catch (error) { posted = error; }
+  // The GET is the post-condition: a retry or duplicate POST still succeeds if PayPal holds this exact tracker.
+  const tracker = await api<{ transaction_id?: string; status?: string }>(`/v1/shipping/trackers/${encodeURIComponent(id)}`).catch((error) => { throw posted ?? error; });
   if (tracker.transaction_id !== payload.transaction_id || tracker.status !== "SHIPPED") throw new Error(`PayPal tracker read-back was ${tracker.status ?? "missing"}, expected SHIPPED`);
   return { id, status: tracker.status, transactionId: tracker.transaction_id };
 }
