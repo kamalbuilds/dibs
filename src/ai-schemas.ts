@@ -1,7 +1,12 @@
 import { z } from "zod";
 
+const unit = z.number().min(0).max(1);
+export const BoxSchema = z.object({ x: unit, y: unit, w: unit, h: unit });
+export type Box = z.infer<typeof BoxSchema>;
+
 export const VisionItemSchema = z.object({
   title: z.string().trim().min(1),
+  box: BoxSchema,
   set_or_platform: z.string().nullable(),
   condition_notes: z.string().nullable(),
   read_text: z.string(),

@@ -4,8 +4,9 @@ import {
   addClaim, addEvent, addItem, addOperation, addShipment, buyerClaims, closeSale, createInvoice, createSale, deleteItem, getInvoice, getInvoiceByPayPal,
   getItem, getSaleById, getSaleBySlug, invoiceItems, listClaims, listEvents, listInvoices, listItemClaims, listItems, listOutstandingInvoices,
   listDraftInvoices, listSalesToClose, matchesOwnerKey, markInvoiceCancelled, markInvoiceHeld, markInvoicePaid, nextBackup, nextClaimSequence, publishSale, unbilledClaimCount, unclaimedItems, updateInvoice,
-  updateItem, updateItemStatus, updateOperation, type ClaimRow, type EventRow, type InvoiceRow, type ItemRow, type SaleRow,
+  setItemPhoto, updateItem, updateItemStatus, updateOperation, type ClaimRow, type EventRow, type InvoiceRow, type ItemRow, type SaleRow,
 } from "./store.js";
+import { removeItemPhoto, saveItemPhoto } from "./photos.js";
 import { addTracker, trackerPayload, cancelInvoice as paypalCancel, createInvoice as paypalCreate, readInvoice as paypalRead, remindInvoice as paypalRemind, sendInvoice as paypalSend, type InvoiceLine } from "./paypal.js";
 
 type Listener = (event: EventRow) => void;
@@ -33,7 +34,7 @@ export function ownerAuthorized(sale: SaleRow | undefined, key: string | undefin
 export function sellerSale(id: string) {
   const sale = getSaleById(id);
   if (!sale) return null;
-  const items = listItems(id).map((item) => ({ ...item, queue: listItemClaims(item.id).map((claim) => ({ handle: claim.handle, atMs: claim.at_ms, kind: claim.kind })) }));
+  const items = listItems(id).map((item) => ({ ...item, photoUrl: itemPhotoUrl(item), queue: listItemClaims(item.id).map((claim) => ({ handle: claim.handle, atMs: claim.at_ms, kind: claim.kind })) }));
   return { sale, items, claims: listClaims(id), invoices: listInvoices(id), events: listEvents(id) };
 }
 
@@ -42,7 +43,7 @@ export function publicSale(slug: string) {
   if (!sale?.published_at_ms) return null;
   const items = listItems(sale.id).map((item) => ({
     id: item.id, number: item.number, title: item.title, setOrPlatform: item.set_or_platform,
-    conditionNotes: item.condition_notes, priceCents: item.price_cents, status: item.status,
+    conditionNotes: item.condition_notes, priceCents: item.price_cents, status: item.status, photoUrl: itemPhotoUrl(item),
     backupCount: Math.max(0, unbilledClaimCount(item.id) - (item.status === "CLAIMED" ? 1 : 0)),
   }));
   return { id: sale.id, slug: sale.slug, title: sale.title, status: sale.status, closesAtMs: sale.closes_at_ms, depositPercent: sale.deposit_bp / 100, items, updatedAtMs: Date.now() };
@@ -76,7 +77,20 @@ export function removeSaleItem(itemId: string): void {
   const sale = item && getSaleById(item.sale_id);
   if (!item || !sale || sale.published_at_ms || sale.status !== "OPEN") throw new Error("Only an unpublished sale item can be removed");
   deleteItem(itemId);
+  removeItemPhoto(itemId);
   event(sale.id, "item_removed", { number: item.number, title: item.title }, item.id);
+}
+
+export const itemPhotoUrl = (item: ItemRow) => item.photo_at_ms ? `/api/items/${item.id}/photo?v=${item.photo_at_ms}` : null;
+
+// Crops from the AI box and seller replacements both land here; live pages reload on the event.
+export function attachItemPhoto(itemId: string, webp: Buffer, sourcePhoto: string | null, box: unknown): ItemRow {
+  const item = getItem(itemId);
+  if (!item) throw new Error("Item not found");
+  saveItemPhoto(itemId, webp);
+  setItemPhoto(itemId, sourcePhoto, box);
+  event(item.sale_id, "item_photo_updated", { number: item.number, source: sourcePhoto ? "sale_photo" : "seller_upload" }, itemId);
+  return getItem(itemId)!;
 }
 
 export function publish(saleId: string): SaleRow {

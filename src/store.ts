@@ -34,6 +34,9 @@ export interface ItemRow {
   confidence: number | null;
   status: ItemStatus;
   created_at_ms: number;
+  source_photo: string | null;
+  box_json: string | null;
+  photo_at_ms: number | null;
 }
 
 export interface ClaimRow {
@@ -142,6 +145,9 @@ export const db = (() => {
   addColumn("claims", "hold", "INTEGER NOT NULL DEFAULT 0");
   addColumn("invoices", "deposit_cents", "INTEGER");
   addColumn("shipments", "paypal_tracker_id", "TEXT");
+  addColumn("items", "source_photo", "TEXT");
+  addColumn("items", "box_json", "TEXT");
+  addColumn("items", "photo_at_ms", "INTEGER");
   return database;
 })();
 
@@ -202,6 +208,10 @@ export function updateItem(itemId: string, item: { title: string; setOrPlatform?
   db.prepare("UPDATE items SET title=?,set_or_platform=?,condition_notes=?,price_cents=? WHERE id=?")
     .run(item.title, item.setOrPlatform ?? null, item.conditionNotes ?? null, item.priceCents, itemId);
   return getItem(itemId)!;
+}
+
+export function setItemPhoto(itemId: string, sourcePhoto: string | null, box: unknown): void {
+  db.prepare("UPDATE items SET source_photo=?,box_json=?,photo_at_ms=? WHERE id=?").run(sourcePhoto, box ? JSON.stringify(box) : null, Date.now(), itemId);
 }
 
 export function deleteItem(itemId: string): void {

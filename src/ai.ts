@@ -1,4 +1,5 @@
 import { groundVisionItem, linkThreadEvents } from "./domain.js";
+import { assertPhoto } from "./photos.js";
 import { ThreadModelSchema, VisionSchema, type ThreadEvent, type VisionResult } from "./ai-schemas.js";
 
 export class AiOutputError extends Error {}
@@ -7,8 +8,9 @@ export const aiModel = () => process.env.AI_MODEL || "google/gemini-3.8-flash";
 
 const visionJsonSchema = {
   type: "object", additionalProperties: false, required: ["items"], properties: {
-    items: { type: "array", items: { type: "object", additionalProperties: false, required: ["title", "set_or_platform", "condition_notes", "read_text", "position", "confidence"], properties: {
-      title: { type: "string" }, read_text: { type: "string" }, set_or_platform: { type: ["string", "null"] }, condition_notes: { type: ["string", "null"] }, position: { type: "integer", minimum: 1 }, confidence: { type: "number", minimum: 0, maximum: 1 },
+    items: { type: "array", items: { type: "object", additionalProperties: false, required: ["title", "set_or_platform", "condition_notes", "read_text", "position", "confidence", "box"], properties: {
+      title: { type: "string" },
+      box: { type: "object", additionalProperties: false, required: ["x", "y", "w", "h"], properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 }, w: { type: "number", minimum: 0, maximum: 1 }, h: { type: "number", minimum: 0, maximum: 1 } } }, read_text: { type: "string" }, set_or_platform: { type: ["string", "null"] }, condition_notes: { type: ["string", "null"] }, position: { type: "integer", minimum: 1 }, confidence: { type: "number", minimum: 0, maximum: 1 },
     } } },
   },
 } as const;
@@ -49,9 +51,8 @@ async function completion<T>(instruction: string, content: unknown[], jsonSchema
 }
 
 export async function identifyItems(image: Buffer, mimeType: string): Promise<VisionResult> {
-  if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) throw new Error("Use a JPEG, PNG, or WebP image");
-  if (!image.length || image.length > 12 * 1024 * 1024) throw new Error("Each sale photo must be under 12 MB");
-  const instruction = "Find distinct collectible cards, comics, or retro games a seller could list separately in the photo. Order positions left to right, then top to bottom. For each item, copy into read_text the exact label text you can actually read on it (empty string when nothing is legible). Title it from that text; when nothing is legible, give your best identification with a low confidence. Give set/platform when visible, condition notes only for visible defects, and a confidence from 0 to 1. Never guess unreadable details. Low confidence still appears for seller review. Price is always handled by the seller.";
+  assertPhoto(mimeType, image.length);
+  const instruction = "Find distinct collectible cards, comics, or retro games a seller could list separately in the photo. Order positions left to right, then top to bottom. Give every item a box: the tight bounding box around that one item as fractions of the image size, x and y for its top-left corner, w and h for its width and height, all between 0 and 1. For each item, copy into read_text the exact label text you can actually read on it (empty string when nothing is legible). Title it from that text; when nothing is legible, give your best identification with a low confidence. Give set/platform when visible, condition notes only for visible defects, and a confidence from 0 to 1. Never guess unreadable details. Low confidence still appears for seller review. Price is always handled by the seller.";
   const result = await completion(instruction, [
     { type: "text", text: "Itemize the collectibles in this real sale photo." },
     { type: "image_url", image_url: { url: `data:${mimeType};base64,${image.toString("base64")}` } },

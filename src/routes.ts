@@ -5,7 +5,8 @@ import { ClaimInputSchema, ItemInputSchema, SaleInputSchema, ThreadSchema } from
 import { aiModel, identifyItems, parseThread } from "./ai.js";
 import { parseClaimCommand } from "./domain.js";
 import { db, getInvoice, getItem, getSaleById, listItems, listInvoices } from "./store.js";
-import { addSaleItem, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, subscribe, retryInvoice } from "./service.js";
+import { assertPhoto, cropToWebp, itemPhotoFromUpload, normalizeSalePhoto, readItemPhoto, saveSalePhoto } from "./photos.js";
+import { addSaleItem, attachItemPhoto, itemPhotoUrl, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, subscribe, retryInvoice } from "./service.js";
 import { verifyWebhook } from "./paypal.js";
 
 export const app = new Hono();
@@ -20,7 +21,7 @@ function requireOwner(context: Context, saleId: string) {
 }
 
 app.get("/api/health", (c) => c.json({ ok: true, missing: missingSetup() }));
-app.get("/api/config", (c) => c.json({ missing: missingSetup(), demoBuyerEmail: process.env.DEMO_BUYER_EMAIL || null, aiModel: aiModel(), paypalEnvironment: process.env.PAYPAL_ENV === "live" ? "live" : "sandbox" }));
+app.get("/api/config", (c) => c.json({ missing: missingSetup(), demoBuyerEmail: process.env.DEMO_BUYER_EMAIL || null, demoSaleSlug: process.env.DEMO_SALE_SLUG || null, aiModel: aiModel(), paypalEnvironment: process.env.PAYPAL_ENV === "live" ? "live" : "sandbox" }));
 
 app.post("/api/sales", async (c) => {
   try {
@@ -84,14 +85,39 @@ app.post("/api/sales/:id/vision", async (c) => {
     const form = await c.req.formData();
     const files = form.getAll("photos").filter((value): value is File => value instanceof File);
     if (!files.length || files.length > 4) return c.json({ error: "Add between one and four sale photos" }, 400);
-    const items = [];
+    files.forEach((file) => assertPhoto(file.type, file.size));
+    const added = [];
     for (const file of files) {
-      const identified = await identifyItems(Buffer.from(await file.arrayBuffer()), file.type);
-      items.push(...identified.items);
+      const photo = await normalizeSalePhoto(Buffer.from(await file.arrayBuffer()));
+      const source = saveSalePhoto(sale.id, photo);
+      const identified = await identifyItems(photo, "image/jpeg");
+      // ponytail: read_text is returned for the review screen only, not stored; persist it if sellers need it after reload.
+      for (const item of identified.items) {
+        const row = addSaleItem(sale.id, { title: item.title, setOrPlatform: item.set_or_platform, conditionNotes: item.condition_notes, confidence: item.confidence });
+        const withPhoto = attachItemPhoto(row.id, await cropToWebp(photo, item.box), source, item.box);
+        added.push({ ...withPhoto, photoUrl: itemPhotoUrl(withPhoto), read_text: item.read_text });
+      }
     }
-    // ponytail: read_text is returned for the review screen only, not stored; persist it if sellers need it after reload.
-    const added = items.map((item) => ({ ...addSaleItem(sale.id, { title: item.title, setOrPlatform: item.set_or_platform, conditionNotes: item.condition_notes, confidence: item.confidence }), read_text: item.read_text }));
     return c.json({ items: added }, 201);
+  } catch (error) { return c.json({ error: validationError(error) }, 400); }
+});
+
+app.get("/api/items/:id/photo", (c) => {
+  const photo = readItemPhoto(c.req.param("id"));
+  if (!photo) return c.json({ error: "Photo not found" }, 404);
+  return c.body(new Uint8Array(photo), 200, { "content-type": "image/webp", "cache-control": "public, max-age=31536000, immutable" });
+});
+
+app.put("/api/items/:id/photo", async (c) => {
+  try {
+    const item = getItem(c.req.param("id"));
+    if (!item) return c.json({ error: "Item not found" }, 404);
+    requireOwner(c, item.sale_id);
+    const file = (await c.req.formData()).get("photo");
+    if (!(file instanceof File)) return c.json({ error: "Attach one photo" }, 400);
+    assertPhoto(file.type, file.size);
+    const updated = attachItemPhoto(item.id, await itemPhotoFromUpload(Buffer.from(await file.arrayBuffer())), null, null);
+    return c.json({ item: { ...updated, photoUrl: itemPhotoUrl(updated) } });
   } catch (error) { return c.json({ error: validationError(error) }, 400); }
 });
 
@@ -201,6 +227,7 @@ app.get("/api/events", (c) => {
     let wake: (() => void) | undefined;
     const unsubscribe = subscribe(saleId, (entry) => { queue.push(entry); wake?.(); });
     stream.onAbort(unsubscribe);
+    await stream.writeSSE({ event: "ready", data: "" });
     try {
       while (!stream.closed) {
         if (queue.length) {
