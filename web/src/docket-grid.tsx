@@ -49,6 +49,15 @@ export function buildDocketRows(data: DocketData): DocketRow[] {
   });
 }
 
+export function docketTotals(invoices: DInvoice[]) {
+  return invoices.filter((invoice) => invoice.status !== "CANCELLED").reduce((sum, invoice) => ({ subtotal: sum.subtotal + invoice.subtotal_cents, shipping: sum.shipping + invoice.shipping_cents, fee: sum.fee + invoice.fee_cents, total: sum.total + invoice.total_cents }), { subtotal: 0, shipping: 0, fee: 0, total: 0 });
+}
+
+export function buyersToInvoice(rows: DocketRow[]): number {
+  // Same set close-and-invoice bills: claimed items with no live invoice. Sent, paid or held rows already have one.
+  return new Set(rows.filter((row) => row.buyer && row.status === "CLAIMED" && !row.invoice).map((row) => row.buyer.toLowerCase())).size;
+}
+
 // Dibs paper-binder theme on the AG Grid Theming API (community).
 export const docketTheme = themeQuartz.withParams({
   accentColor: "#d7261e", backgroundColor: "#fffefa", foregroundColor: "#111111", chromeBackgroundColor: "#eeeae1",
@@ -117,7 +126,7 @@ export function DocketGrid({ data, compsReady, live, renderPhoto, renderStatus, 
     return () => window.clearTimeout(flash);
   }, [rows]);
 
-  const totals = useMemo(() => data.invoices.filter((invoice) => invoice.status !== "CANCELLED").reduce((sum, invoice) => ({ subtotal: sum.subtotal + invoice.subtotal_cents, shipping: sum.shipping + invoice.shipping_cents, fee: sum.fee + invoice.fee_cents, total: sum.total + invoice.total_cents }), { subtotal: 0, shipping: 0, fee: 0, total: 0 }), [data]);
+  const totals = useMemo(() => docketTotals(data.invoices), [data]);
   const pinnedBottomRowData = useMemo(() => [{ id: "totals", number: "TOTALS", title: "Invoice totals", buyer: "", claimed: "", backup: null, status: "", due: "", ...totals }], [totals]);
   const hideComps = !compsReady;
   const narrow = useNarrow();

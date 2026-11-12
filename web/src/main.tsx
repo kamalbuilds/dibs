@@ -6,7 +6,7 @@ import { Archive, ArrowDownToLine, ArrowUpRight, BadgeCheck, Ban, Camera, Check,
 import "./styles.css";
 import { at, dateTime, describeEvent, money } from "./format.ts";
 import { ClaimConfirmation, ClaimSheet, LiveTicker, type ClaimResult, type LiveNote } from "./claim-ui.tsx";
-import { DocketGrid, DocketKpis, buildDocketRows } from "./docket-grid.tsx";
+import { DocketGrid, DocketKpis, buildDocketRows, buyersToInvoice } from "./docket-grid.tsx";
 import { groupRollovers } from "./rollover.ts";
 import "./polish.css";
 
@@ -277,7 +277,7 @@ function Dashboard() {
     try { await api(`/api/invoices/${ship.id}/ship`, { method: "POST", body: JSON.stringify({ carrier, tracking }) }, accessKey); setShip(null); setCarrier(""); setTracking(""); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Could not save tracking"); }
   }
 
-  const buyers = new Set((data?.claims ?? []).map((claim) => claim.handle.toLowerCase())).size;
+  const buyers = data ? buyersToInvoice(buildDocketRows(data)) : 0;
 
   if (error && !data) return <Shell live={live}><main className="page"><p className="eyebrow">SELLER / ACCESS</p><h1>Open your sale.</h1><p className="error-message">{error}</p><Field label="Seller access key"><input aria-label="Seller access key" type="password" autoComplete="current-password" value={accessKey} onChange={(e) => { setAccessKey(e.target.value); localStorage.setItem(keyName(saleId), e.target.value); }} /></Field><button className="button button-primary" onClick={() => void load()}>Continue</button></main></Shell>;
   if (!data) return <Shell><main className="page loading-state"><LoaderCircle className="spin"/>Opening sale docket…</main></Shell>;
