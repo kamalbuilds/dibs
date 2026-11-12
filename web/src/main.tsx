@@ -67,7 +67,7 @@ function Shell({ children, buyer = false, live }: { children: React.ReactNode; b
 
 function ItemArt({ item, className }: { item: Item; className: string }) {
   return item.photoUrl
-    ? <span className={`${className} art-photo`} aria-hidden="true"><img src={item.photoUrl} alt="" loading="lazy" decoding="async"/></span>
+    ? <span className={`${className} art-photo`} aria-hidden="true"><img src={item.photoUrl} alt="" decoding="async"/></span>
     : <span className={`${className} art-blank`} aria-hidden="true"><b>{pocketNo(item.number)}</b><span>{item.title}</span></span>;
 }
 
