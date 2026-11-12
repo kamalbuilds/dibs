@@ -43,6 +43,8 @@ To bring claims in from a comment thread, open `/import/<sale id>` from the dock
 
 Dibs uses PayPal Invoicing v2 for invoice creation (including deposit invoices with a minimum due), sending, reminders, cancellation, and readback, and Shipment Tracking v1 (`/v1/shipping/trackers`) to attach tracking to the paid transaction. The polling reconciler runs every 15 seconds; webhook signatures are checked through PayPal's verification endpoint when `PAYPAL_WEBHOOK_ID` is configured. OpenRouter chat completions use JSON Schema output validated by Zod before the server accepts suggestions.
 
+**Price comps from Channel3.** After the AI itemizes a photo, Dibs searches Channel3 for each item by its AI-read title and shows real store listings in the review grid and the docket: lowest, median, and up to three source links in USD. Listings whose titles do not name the item and Tukey outliers are left out, an empty search reads "No comps", and **Use median** fills the price for the seller to confirm. Set `CHANNEL3_API_KEY` to turn it on; **Price comps** on the docket reruns a whole sale.
+
 ## Render
 
 Create a Render web service from this repository using `render.yaml`. Configure PayPal sandbox credentials and `OPENROUTER_API_KEY` in the service environment. Render mounts persistent SQLite storage at `/var/data`.

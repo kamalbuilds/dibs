@@ -425,3 +425,19 @@ h1 { margin: 7px 0 12px; font: 500 43px/1 var(--font-display); letter-spacing: -
   .home-steps li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--rule); }
   .site-footer { gap: 12px; }
 }
+
+/* Channel3 comps and archive */
+.comps { margin-top: 4px; font-size: 10px; color: var(--secondary); }
+.comps p { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.comps b { color: var(--ink); font: 600 10px var(--font-numeric); }
+.comps-label { color: var(--green); font: 600 9px var(--font-numeric); letter-spacing: .08em; }
+.comps-none { margin: 4px 0 0; font: 10px var(--font-numeric); color: var(--secondary); }
+.comps ul { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 0; padding: 0; }
+.comps a { display: inline-flex; align-items: center; gap: 4px; color: var(--secondary); text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 2px; }
+.comps a:hover { color: var(--ink); }
+.comps-use { min-height: 22px; padding: 2px 7px; border: 1px solid var(--ink); border-radius: 2px; background: var(--ink); color: var(--panel); font: 600 9px var(--font-numeric); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+.comps-use:hover { background: #302c27; }
+.cell-comps { display: grid; line-height: 1.15; font: 11px var(--font-numeric); }
+.cell-comps small { color: var(--secondary); font: 9px var(--font-body); }
+.cell-muted { color: var(--secondary); font-size: 10px; }
+.archived-note { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px dashed #a9a398; color: var(--secondary); font-size: 12px; }
