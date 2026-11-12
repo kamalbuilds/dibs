@@ -8,6 +8,7 @@ primary_region = "iad"
   DATA_DIR = "/data"
   PAYPAL_ENV = "sandbox"
   PUBLIC_URL = "https://dibs-claims.fly.dev"
+  DEMO_SALE_SLUG = "kJ4emW4"
 
 [mounts]
   source = "data"
