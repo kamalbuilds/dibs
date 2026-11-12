@@ -181,3 +181,24 @@
 /* ---------- Invoice list ---------- */
 .invoice-line { grid-template-columns: minmax(0, 1fr) auto auto 18px; padding: 8px 0; row-gap: 3px; }
 .invoice-line > .on-paypal, .invoice-line > .deposit-note { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
+
+/* ---------- Critique fixes: home, sample photo, setup ---------- */
+.button.is-pending { opacity: .6; cursor: progress; }
+.demo-binder-loading .demo-art { background: linear-gradient(100deg, #ebe5d9 30%, #f4efe6 50%, #ebe5d9 70%) 0 0 / 200% 100%; animation: shimmer 1.2s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.sample-row { display: flex; align-items: center; gap: 12px; margin: -6px 0 20px 42px; padding: 10px 12px; border: 1px solid var(--rule); border-left: 3px solid var(--accent); background: var(--panel); }
+.sample-row img { flex: none; width: 44px; height: 77px; object-fit: cover; border: 1px solid var(--rule); }
+.sample-row > div { flex: 1; display: grid; gap: 2px; }
+.sample-row strong { font: 500 17px/1.1 var(--font-display); }
+.sample-row span { color: var(--secondary); font-size: 12px; }
+@media (max-width: 700px) { .sample-row { margin-left: 0; flex-wrap: wrap; } .sample-row .button { width: 100%; } }
+.setup-on { border-color: #9eb4a1; background: var(--green); color: #fffefa; }
+.setup-off { border-color: #d2b184; color: #89520e; }
+.setup-optional { border-color: #c9c2b6; color: var(--secondary); }
+.setup-row > span:last-child { color: var(--green); }
+.setup-detail { font-family: var(--font-numeric); font-size: 10.5px !important; color: var(--ink) !important; }
+.setup-operators { margin-top: 22px; color: var(--secondary); font-size: 11px; }
+.setup-operators summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.setup-operators ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.setup-operators li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--rule); padding: 4px 0; }
+.grid-empty-state { margin: 0; padding: 20px 14px; color: var(--secondary); font-size: 12px; }
