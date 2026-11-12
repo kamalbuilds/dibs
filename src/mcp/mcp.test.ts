@@ -183,10 +183,10 @@ describe("MCP server", () => {
     return { client, calls };
   }
 
-  it("lists the three tools with schemas and annotations", async () => {
+  it("lists the four tools with schemas and annotations", async () => {
     const { client } = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual(["claim", "invoice_status", "list_sale"]);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(["await_payment", "claim", "invoice_status", "list_sale"]);
     const claimTool = tools.find((tool) => tool.name === "claim")!;
     expect(claimTool.inputSchema.required).toEqual(expect.arrayContaining(["sale", "handle", "email"]));
     expect(tools.find((tool) => tool.name === "list_sale")!.annotations?.readOnlyHint).toBe(true);

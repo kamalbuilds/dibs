@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { Hono } from "hono";
 import { z } from "zod";
 import { DibsApiError, DibsClient } from "./client.js";
-import { claim, invoiceStatus, listSale, SessionMemory, type ToolResult } from "./tools.js";
+import { awaitPayment, claim, invoiceStatus, listSale, SessionMemory, type ToolResult } from "./tools.js";
 
 const saleArg = z.string().min(1).describe("The sale: its slug (kJ4emW4) or link (https://dibs-claims.fly.dev/s/kJ4emW4).");
 const sellerKeyArg = z.string().min(8).optional().describe("Optional seller access key for this sale. Unlocks buyer handles in queues and the seller's invoice view. Defaults to DIBS_SELLER_KEY if set. Never needed to claim.");
@@ -18,9 +18,9 @@ async function run<T>(fn: () => Promise<ToolResult<T>>) {
   }
 }
 
-export function createDibsMcpServer(client = new DibsClient(), memory = new SessionMemory()): McpServer {
+export function createDibsMcpServer(client = new DibsClient(), memory = new SessionMemory(), options: { sleep?: (ms: number) => Promise<void> } = {}): McpServer {
   const server = new McpServer({ name: "dibs", version: "1.0.0" }, {
-    instructions: "Dibs runs collectible claim sales: buyers claim numbered pockets, the server timestamp decides who is first, later claimers join a backup line, and each winner gets one PayPal Goods & Services invoice. Unpaid invoices are cancelled and the item rolls to the next backup. Always list_sale before claiming, confirm pocket numbers, handle and email with the user, then claim, then invoice_status.",
+    instructions: "Dibs runs collectible claim sales: buyers claim numbered pockets, the server timestamp decides who is first, later claimers join a backup line, and each winner gets one PayPal Goods & Services invoice. Unpaid invoices are cancelled and the item rolls to the next backup. Always list_sale before claiming, confirm pocket numbers, handle and email with the user, then claim. A claim result carries a 402-style payment block (amount, PayPal invoice, pay URL, expiry); after the buyer opens the pay link, call await_payment to wait for PAID.",
   });
 
   server.registerTool("list_sale", {
@@ -57,6 +57,26 @@ export function createDibsMcpServer(client = new DibsClient(), memory = new Sess
     annotations: { readOnlyHint: true, openWorldHint: true },
   }, async (args) => run(() => invoiceStatus(client, memory, args)));
 
+  server.registerTool("await_payment", {
+    title: "Wait for a PayPal invoice to be paid",
+    description: "After a claim returns a 402-style payment requirement, wait until the buyer pays. Polls Dibs, which reads the invoice from PayPal Invoicing v2 on demand (at most once every 3 seconds per invoice), until it is PAID or CANCELLED or the timeout passes, then returns the final state. Read-only: it never pays or changes anything. Pass the invoiceId from the claim's payment block (or the sale and handle claimed in this session). If it times out, call it again.",
+    inputSchema: {
+      invoiceId: z.string().min(1).optional().describe("Dibs invoice id (payment.invoiceId in the claim result, or the id in /receipt/<id>)."),
+      sale: saleArg.optional(),
+      handle: z.string().min(1).max(80).optional().describe("Buyer handle used in this session's claim, when no invoiceId is given."),
+      timeoutSeconds: z.number().min(5).max(600).optional().describe("How long to wait. Default 120."),
+      intervalSeconds: z.number().min(2).max(30).optional().describe("Seconds between checks. Default 4."),
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+  }, async (args, extra) => run(() => awaitPayment(client, memory, args, {
+    sleep: options.sleep,
+    onPoll: async (poll, status, elapsedMs, timeoutMs) => {
+      const progressToken = extra._meta?.progressToken;
+      if (progressToken === undefined) return;
+      await extra.sendNotification({ method: "notifications/progress", params: { progressToken, progress: Math.min(elapsedMs, timeoutMs), total: timeoutMs, message: `Check ${poll}: ${status}` } }).catch(() => undefined);
+    },
+  })));
+
   server.registerResource("sale", new ResourceTemplate("dibs://sale/{slug}", { list: undefined }), {
     title: "Dibs sale", description: "A Dibs claim sale as JSON (same data as list_sale).", mimeType: "application/json",
   }, async (uri, { slug }) => {
@@ -69,7 +89,7 @@ export function createDibsMcpServer(client = new DibsClient(), memory = new Sess
     description: "Paste a seller's X / Instagram / Discord claim-sale post (or a Dibs link) and what you want; the assistant finds the pockets and claims them for you.",
     argsSchema: { post: z.string().describe("The seller's post or thread text, including the Dibs sale link."), want: z.string().describe("What you want, in your words, e.g. 'Sherlock Holmes and anything under $15'."), handle: z.string().describe("Your social handle."), email: z.string().describe("Email for the PayPal invoice.") },
   }, ({ post, want, handle, email }) => ({
-    messages: [{ role: "user", content: { type: "text", text: `Here is a claim-sale post:\n\n${post}\n\nI want: ${want}\nMy handle: ${handle}\nInvoice email: ${email}\n\n1. Find the Dibs sale link or slug in the post and call list_sale.\n2. Match what I want to pocket numbers; skip anything already PAID or SHIPPED; tell me which are open and which would make me a backup.\n3. Show me the pockets, prices and total and ask me to confirm.\n4. After I confirm, call claim once with those itemNumbers.\n5. Report First / Backup N with the server timestamp, then call invoice_status and tell me when and how PayPal will invoice me.` } }],
+    messages: [{ role: "user", content: { type: "text", text: `Here is a claim-sale post:\n\n${post}\n\nI want: ${want}\nMy handle: ${handle}\nInvoice email: ${email}\n\n1. Find the Dibs sale link or slug in the post and call list_sale.\n2. Match what I want to pocket numbers; skip anything already PAID or SHIPPED; tell me which are open and which would make me a backup.\n3. Show me the pockets, prices and total and ask me to confirm.\n4. After I confirm, call claim once with those itemNumbers.\n5. Report First / Backup N with the server timestamp and the 402-style payment block (amount, pay link, expiry). If payment is required, give me the pay link and call await_payment until it reports PAID; if the invoice is pending, tell me when it will be sent.` } }],
   }));
 
   return server;

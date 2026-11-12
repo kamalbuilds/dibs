@@ -4,13 +4,13 @@ import { z } from "zod";
 import { ClaimInputSchema, ItemInputSchema, SaleInputSchema, ThreadSchema } from "./ai-schemas.js";
 import { aiModel, identifyItems, parseThread } from "./ai.js";
 import { parseClaimCommand } from "./domain.js";
-import { db, getInvoice, getItem, getSaleById, listItemClaims, listItems, listInvoices, type ClaimRow } from "./store.js";
+import { db, getInvoice, getItem, getSaleById, listItemClaims, listItems, listInvoices, type ClaimRow, type InvoiceRow } from "./store.js";
 import { assertPhoto, cropToWebp, itemPhotoFromUpload, normalizeSalePhoto, readItemPhoto, saveSalePhoto } from "./photos.js";
 import { compsConfigured } from "./comps.js";
-import { addSaleItem, archive, attachItemPhoto, itemPhotoUrl, refreshComps, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, ClaimReplay, subscribe, retryInvoice } from "./service.js";
+import { addSaleItem, archive, attachItemPhoto, itemPhotoUrl, refreshComps, cancelAndPass, closeAndInvoice, confirmImportedClaims, createNewSale, editSaleItem, handleInvoiceWebhook, ownerAuthorized, publish, recordShipment, reconcileInvoices, remind, removeSaleItem, resolveImportPreview, salePublicBySlug, saleSellerById, submitClaims, ClaimReplay, paymentRequirement, refreshInvoiceFromPayPal, subscribe, retryInvoice } from "./service.js";
 import { verifyWebhook } from "./paypal.js";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { claimLimitPerHandle, claimLimitPerIp } from "./rate-limit.js";
+import { claimLimitPerHandle, claimLimitPerIp, refreshLimitPerInvoice, refreshLimitPerIp } from "./rate-limit.js";
 
 export const app = new Hono();
 const missingSetup = () => ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "OPENROUTER_API_KEY"].filter((key) => !process.env[key]);
@@ -190,11 +190,17 @@ app.post("/api/sales/:id/claims", async (c) => {
     // The claimer's own invoices only: a handle is typed by the buyer, so it is matched together with their email.
     const invoicesFor = () => listInvoices(sale.id).filter((invoice) => invoice.buyer_handle.toLowerCase() === input.handle.trim().replace(/^@/, "").toLowerCase() && invoice.buyer_email.toLowerCase() === input.email.trim().toLowerCase());
     try {
+      // The claim itself succeeded, so the HTTP status stays 201/200 (the buyer page and generic clients treat 4xx as failure);
+      // `payment` carries the 402-style payment-required details: amount, PayPal invoice, pay URL, expiry.
       const claims = await submitClaims(sale.id, { ...input, itemIds: parsed.itemIds });
-      return c.json({ claims: claims.map(claimView), invoices: invoicesFor(), replayed: false }, 201);
+      const invoices = invoicesFor();
+      return c.json({ claims: claims.map(claimView), invoices, payment: paymentRequirement(getSaleById(sale.id)!, claims, invoices), replayed: false }, 201);
     } catch (error) {
       // Same handle, email and items as an earlier claim: return that claim (and its invoice) so a retry is safe.
-      if (error instanceof ClaimReplay) return c.json({ claims: error.claims.map(claimView), invoices: invoicesFor(), replayed: true }, 200);
+      if (error instanceof ClaimReplay) {
+        const invoices = invoicesFor();
+        return c.json({ claims: error.claims.map(claimView), invoices, payment: paymentRequirement(getSaleById(sale.id)!, error.claims, invoices), replayed: true }, 200);
+      }
       throw error;
     }
   } catch (error) { return c.json({ error: validationError(error) }, error instanceof z.ZodError ? 400 : 409); }
@@ -262,12 +268,34 @@ app.post("/api/invoices/:id/ship", async (c) => {
   } catch (error) { return c.json({ error: validationError(error) }, error instanceof z.ZodError ? 400 : 401); }
 });
 
+// Buyer-safe invoice view: the receipt link already exposes exactly this (no email, no seller data).
+function receiptView(invoice: InvoiceRow) {
+  const items = db.prepare("SELECT items.number,items.title,items.price_cents FROM items JOIN invoice_items ON invoice_items.item_id=items.id WHERE invoice_items.invoice_id=? ORDER BY items.number").all(invoice.id);
+  const shipment = db.prepare("SELECT carrier,tracking,paypal_tracker_id FROM shipments WHERE invoice_id=?").get(invoice.id);
+  return { invoice: { id: invoice.id, buyerHandle: invoice.buyer_handle, status: invoice.status, subtotalCents: invoice.subtotal_cents, shippingCents: invoice.shipping_cents, feeCents: invoice.fee_cents, totalCents: invoice.total_cents, depositCents: invoice.deposit_cents, payerUrl: invoice.payer_url, dueAtMs: invoice.due_at_ms }, items, shipment };
+}
+
 app.get("/api/receipts/:id", (c) => {
   const invoice = getInvoice(c.req.param("id"));
   if (!invoice) return c.json({ error: "Receipt not found" }, 404);
-  const items = db.prepare("SELECT items.number,items.title,items.price_cents FROM items JOIN invoice_items ON invoice_items.item_id=items.id WHERE invoice_items.invoice_id=? ORDER BY items.number").all(invoice.id);
-  const shipment = db.prepare("SELECT carrier,tracking,paypal_tracker_id FROM shipments WHERE invoice_id=?").get(invoice.id);
-  return c.json({ invoice: { id: invoice.id, buyerHandle: invoice.buyer_handle, status: invoice.status, subtotalCents: invoice.subtotal_cents, shippingCents: invoice.shipping_cents, feeCents: invoice.fee_cents, totalCents: invoice.total_cents, depositCents: invoice.deposit_cents, payerUrl: invoice.payer_url }, items, shipment });
+  return c.json(receiptView(invoice));
+});
+
+// On-demand PayPal read for one invoice (used by the MCP await_payment tool). At most one PayPal call per invoice
+// every few seconds; faster polls get Dibs' stored state with checkedPayPal: false. Per-IP abuse limit answers 429.
+app.post("/api/invoices/:id/refresh", async (c) => {
+  const ipLimit = refreshLimitPerIp.check(clientIp(c));
+  if (!ipLimit.ok) { c.header("Retry-After", String(ipLimit.retryAfterSeconds)); return c.json({ error: `Too many status checks. Try again in ${ipLimit.retryAfterSeconds}s.`, retryAfterSeconds: ipLimit.retryAfterSeconds }, 429); }
+  const invoice = getInvoice(c.req.param("id"));
+  if (!invoice) return c.json({ error: "Receipt not found" }, 404);
+  const atMs = Date.now();
+  if (!refreshLimitPerInvoice.check(invoice.id, atMs).ok) return c.json({ ...receiptView(invoice), refresh: { checkedPayPal: false, remoteStatus: null, atMs, reason: "throttled" } });
+  try {
+    const result = await refreshInvoiceFromPayPal(invoice.id);
+    return c.json({ ...receiptView(result.invoice), refresh: { checkedPayPal: result.checked, remoteStatus: result.remoteStatus, atMs, reason: result.checked ? null : "not_outstanding_or_paypal_unconfigured" } });
+  } catch {
+    return c.json({ ...receiptView(getInvoice(invoice.id)!), refresh: { checkedPayPal: false, remoteStatus: null, atMs, reason: "paypal_unavailable" } });
+  }
 });
 
 app.get("/api/events", (c) => {
