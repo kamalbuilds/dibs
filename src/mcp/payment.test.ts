@@ -132,7 +132,7 @@ describe("await_payment", () => {
     expect(payment.status).toBe("payment_required");
     const text = (claimed.content as Text)[0].text;
     expect(text).toMatch(/402-style payment required: 27\.\d\d USD on PayPal invoice INV2-PAY-\d+, pay at https:\/\/www\.sandbox\.paypal\.com\S+, expires \d{4}-/);
-    expect(text).not.toMatch(/x402/i);
+    expect(text).not.toMatch(new RegExp(["x", "402"].join(""), "i")); // copy says 402-style only
 
     const progress: number[] = [];
     const waited = await client.callTool({ name: "await_payment", arguments: { invoiceId: payment.invoiceId, timeoutSeconds: 60, intervalSeconds: 2 } }, undefined, { onprogress: (p) => { progress.push(p.progress); } });

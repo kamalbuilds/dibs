@@ -17,7 +17,7 @@ The server defaults to port 8787. Set `PORT` to use another port and `DATA_DIR` 
 
 ## API path
 
-Create a sale with `POST /api/sales`, add seller-confirmed items through `POST /api/sales/:id/items`, then publish with `POST /api/sales/:id/publish`. The create response contains the seller key. Send it as `x-seller-key` on seller routes. Buyers claim at `POST /api/sales/:id/claims` (a repeat of the same handle, email and items returns the original claims with `replayed: true`; the route allows 30 claims a minute per client IP and 10 per handle per sale, answering 429 with `Retry-After`, tunable with `CLAIM_RATE_PER_IP`, `CLAIM_RATE_PER_HANDLE`, `CLAIM_RATE_WINDOW_MS`, 0 to turn off); public sale state is available at `/api/public/sales/:slug`, and live changes stream from `/api/events?saleId=<sale-id>` using Server-Sent Events. A seller can close claims at `POST /api/sales/:id/close` to create and send bundled PayPal invoices.
+Create a sale with `POST /api/sales`, add seller-confirmed items through `POST /api/sales/:id/items`, then publish with `POST /api/sales/:id/publish`. The create response contains the seller key. Send it as `x-seller-key` on seller routes. Buyers claim at `POST /api/sales/:id/claims` (the response carries a 402-style `payment` block; a repeat of the same handle, email and items returns the original claims with `replayed: true`; the route allows 30 claims a minute per client IP and 10 per handle per sale, answering 429 with `Retry-After`, tunable with `CLAIM_RATE_PER_IP`, `CLAIM_RATE_PER_HANDLE`, `CLAIM_RATE_WINDOW_MS`, 0 to turn off); public sale state is available at `/api/public/sales/:slug`, and live changes stream from `/api/events?saleId=<sale-id>` using Server-Sent Events. `POST /api/invoices/:id/refresh` re-reads one invoice from PayPal Invoicing v2 on demand and returns the public receipt view (one PayPal read per invoice per 3 seconds, `INVOICE_REFRESH_MIN_INTERVAL_MS`; 60 checks a minute per IP, `INVOICE_REFRESH_PER_IP`). A seller can close claims at `POST /api/sales/:id/close` to create and send bundled PayPal invoices.
 
 ## Judge it in one minute
 
@@ -52,7 +52,8 @@ Dibs ships an MCP server so Claude Desktop, Claude Code, Cursor, or any MCP clie
 | Tool | What it does |
 | --- | --- |
 | `list_sale` | Sale slug or link → every pocket with number, title, price, status, whether it can be claimed, backup count, photo URL, and the deadline. Read-only. |
-| `claim` | Sale, pocket numbers (or a claim comment such as `mine 3 and 7`), handle, email, optional deposit hold → **First** or **Backup N** per pocket with the server timestamp, the PayPal invoice when the sale invoices on first claim (SENT, total, pay link), and what happens next. Retrying the same claim returns the original result. |
+| `claim` | Sale, pocket numbers (or a claim comment such as `mine 3 and 7`), handle, email, optional deposit hold → **First** or **Backup N** per pocket with the server timestamp, and a 402-style `payment` block: `payment_required` with amount and currency, PayPal invoice id, pay URL and `expires_at` when the sale invoices on first claim, or `pending_invoice` with when the invoice will go out. The HTTP status stays 201 because the claim itself succeeded. Retrying the same claim returns the original result. |
+| `await_payment` | Invoice id (from the claim's `payment` block) → waits until the PayPal invoice is PAID or CANCELLED, or a timeout (default 120 s, every 4 s), reading PayPal on demand through Dibs. Read-only. |
 | `invoice_status` | Invoice id, or sale + handle → PayPal state, total with item/shipping/fee lines, deposit, due time, pay link, tracking, and whether an unpaid item rolled to a backup. Reads Dibs' copy of the invoice, synced from PayPal every 15 seconds. |
 
 It also exposes a `dibs://sale/{slug}` resource and a `claim_from_post` prompt (paste a seller's X / Instagram / Discord post and what you want).
@@ -88,7 +89,7 @@ To see an agent claim become a PayPal invoice, create your own sale on https://d
 
 > Here's a claim sale: https://dibs-claims.fly.dev/s/&lt;your slug&gt;. Claim pocket 1 for me as @judge_demo, invoice to &lt;sandbox buyer email from /setup&gt;.
 
-The reply carries the server timestamp, the SENT PayPal invoice and its pay link; pay it as a sandbox guest, then ask "Did it go through?". Please claim only on your own sale, not on the demo binder. Dibs calls PayPal Invoicing v2 server-side; the MCP server does not use the PayPal Agent Toolkit or PayPal's MCP server, and never holds PayPal credentials.
+The reply carries the server timestamp and a 402-style payment block with the SENT PayPal invoice and its pay link; pay it as a sandbox guest and Claude's `await_payment` returns PAID while the seller docket flips the row to SOLD. Please claim only on your own sale, not on the demo binder. Dibs calls PayPal Invoicing v2 server-side; the MCP server does not use the PayPal Agent Toolkit or PayPal's MCP server, and never holds PayPal credentials.
 
 Environment:
 
