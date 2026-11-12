@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groundVisionItem, linkThreadEvents } from "./domain.js";
+import { groundVisionItem, groupByBuyer, linkThreadEvents } from "./domain.js";
 
 const xPaste = ["Retro Rick", "@retrorick_", "·", "3m", "mine 2", "Pixel Jules", "@jules_plays", "·", "2m", "backup 2 please"];
 
@@ -33,5 +33,16 @@ describe("vision titles must be supported by text read off the item", () => {
   it("drops an unsupported title below the review threshold", () => {
     expect(groundVisionItem({ title: "Ice Hockey", read_text: "PAPERBOY", confidence: 0.7 }).confidence).toBe(0.5);
     expect(groundVisionItem({ title: "RBI Baseball", read_text: "", confidence: 0.9 }).confidence).toBe(0.5);
+  });
+});
+
+describe("one invoice per buyer", () => {
+  it("keeps two handles apart even when they share a PayPal email, and merges one handle across case", () => {
+    const claims = [
+      { handle: "@retrorick_", email: "buyer@example.com" },
+      { handle: "@jules_plays", email: "buyer@example.com" },
+      { handle: "@Jules_Plays", email: "BUYER@example.com" },
+    ];
+    expect(groupByBuyer(claims).map((group) => [group.handle, group.claims.length])).toEqual([["@retrorick_", 1], ["@jules_plays", 2]]);
   });
 });

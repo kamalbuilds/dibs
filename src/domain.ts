@@ -85,7 +85,19 @@ function similarity(a: string, b: string): number {
   return Math.max(dice, edit, queryCoverage);
 }
 
-type ModelThreadEvent = { handle: string; line: number; kind: "claim" | "backup" | "question" | "other"; itemRefs: Array<string | number>; timestamp: string | null };
+// The handle is the buyer in a claim sale; the email only says where PayPal sends the invoice.
+export function groupByBuyer<T extends { handle: string; email: string }>(claims: T[]): Array<{ handle: string; email: string; claims: T[] }> {
+  const groups = new Map<string, { handle: string; email: string; claims: T[] }>();
+  for (const claim of claims) {
+    const key = `${claim.handle.toLowerCase()}\n${claim.email.toLowerCase()}`;
+    const group = groups.get(key) ?? { handle: claim.handle, email: claim.email, claims: [] };
+    group.claims.push(claim);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+type ModelThreadEvent ={ handle: string; line: number; kind: "claim" | "backup" | "question" | "other"; itemRefs: Array<string | number>; timestamp: string | null };
 
 // Raw text comes from the paste itself, so every event is provably linked to a real source line.
 export function linkThreadEvents(lines: string[], events: ModelThreadEvent[]): Array<Omit<ModelThreadEvent, "handle"> & { handle: string; raw: string }> {

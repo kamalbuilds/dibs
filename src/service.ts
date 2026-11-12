@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { calculateCart, invoiceTransition, resolveClaims, resolveItemRef, type ShippingRules } from "./domain.js";
+import { calculateCart, groupByBuyer, invoiceTransition, resolveClaims, resolveItemRef, type ShippingRules } from "./domain.js";
 import {
   addClaim, addEvent, addItem, addOperation, addShipment, buyerClaims, closeSale, createInvoice, createSale, deleteItem, getInvoice, getInvoiceByPayPal,
   getItem, getSaleById, getSaleBySlug, invoiceItems, listClaims, listEvents, listInvoices, listItemClaims, listItems, listOutstandingInvoices,
@@ -117,14 +117,7 @@ export async function submitClaims(saleId: string, input: { handle: string; emai
 }
 
 async function issueForClaims(sale: SaleRow, claims: ClaimRow[], dueIntervalMs = 24 * 60 * 60 * 1000): Promise<InvoiceRow[]> {
-  const groups = new Map<string, { handle: string; email: string; claims: ClaimRow[] }>();
-  for (const claim of claims) {
-    const key = claim.email.toLowerCase();
-    const group = groups.get(key) ?? { handle: claim.handle, email: claim.email, claims: [] };
-    group.claims.push(claim);
-    groups.set(key, group);
-  }
-  return Promise.all([...groups.values()].map((group) => issueOneInvoice(sale, group, dueIntervalMs)));
+  return Promise.all(groupByBuyer(claims).map((group) => issueOneInvoice(sale, group, dueIntervalMs)));
 }
 
 async function issueOneInvoice(sale: SaleRow, buyer: { handle: string; email: string; claims: ClaimRow[] }, dueIntervalMs: number): Promise<InvoiceRow> {
