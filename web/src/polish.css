@@ -96,3 +96,88 @@
   .claim-confirm-actions .button { flex: 1; }
   .claim-confirm-note { margin-left: 0; width: 100%; justify-content: center; }
 }
+
+/* ---------- Seller docket: AG Grid community showcase ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.docket-kpis { display: grid; grid-template-columns: 1.4fr repeat(4, minmax(0, 1fr)); margin: 0 0 18px; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); background: var(--panel); }
+.docket-kpis > div { padding: 12px 14px 13px; }
+.docket-kpis > div + div { border-left: 1px solid var(--rule); }
+.docket-kpis dt { color: var(--secondary); font: 700 9.5px var(--font-body); letter-spacing: .12em; text-transform: uppercase; }
+.docket-kpis dd { margin: 6px 0 0; font: 600 20px/1 var(--font-numeric); letter-spacing: -.02em; }
+.docket-kpis .kpi-lead dd { font-size: 30px; color: var(--green); }
+.docket-toolbar { gap: 12px; }
+.docket-toolbar-title { min-width: 0; }
+.docket-toolbar-tools { display: flex; align-items: center; gap: 6px; }
+.docket-toolbar .quick-filter input { width: 230px; }
+.tool-button { min-height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid #b9b2a6; border-radius: 2px; background: var(--panel); color: var(--ink); font: 600 11px var(--font-body); letter-spacing: 0; cursor: pointer; white-space: nowrap; }
+.tool-button:hover:not(:disabled) { border-color: var(--ink); background: #f1ede5; }
+.tool-button:disabled { opacity: .45; cursor: not-allowed; }
+.tool-button-dark { background: var(--ink); border-color: var(--ink); color: #fffefa; }
+.tool-button-dark:hover:not(:disabled) { background: #302c27; }
+.tool-button-plain { border-color: transparent; background: transparent; color: var(--secondary); }
+.live-dot-pulse { box-shadow: 0 0 0 0 rgb(56 99 72 / 45%); animation: live-pulse 1.8s ease-out infinite; }
+@keyframes live-pulse { 0% { box-shadow: 0 0 0 0 rgb(56 99 72 / 45%); } 70% { box-shadow: 0 0 0 7px rgb(56 99 72 / 0%); } 100% { box-shadow: 0 0 0 0 rgb(56 99 72 / 0%); } }
+.docket-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 10px; }
+.filter-chip { min-height: 28px; display: inline-flex; align-items: center; gap: 7px; padding: 3px 5px 3px 10px; border: 1px solid #c9c2b6; border-radius: 999px; background: transparent; color: var(--ink); font: 500 11px var(--font-body); cursor: pointer; }
+.filter-chip b { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #ebe5d9; font: 600 10px var(--font-numeric); text-align: center; }
+.filter-chip:hover { border-color: var(--ink); }
+.filter-chip.is-on { background: var(--ink); border-color: var(--ink); color: #fffefa; }
+.filter-chip.is-on b { background: rgb(255 255 255 / 18%); color: #fffefa; }
+.filter-chip-rolled:not(.is-on) b { background: #fbecea; color: var(--accent); }
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; padding: 7px 10px; border: 1px solid var(--ink); background: #fbecea; animation: sheet-in 160ms ease-out; }
+.bulk-bar strong { margin-right: 6px; font: 600 11px var(--font-numeric); letter-spacing: .04em; }
+.docket-grid { border-top: 1px solid var(--rule); }
+.docket-grid .ag-cell { display: flex; align-items: center; }
+.docket-grid .ag-header-group-cell { font: 700 10px var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--ink); }
+.docket-grid .ag-header-cell-text { font-family: var(--font-numeric); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; }
+.docket-grid .ag-row-pinned { font-weight: 700; background: #eeeae1; }
+.docket-grid .ag-floating-bottom { border-top: 2px solid var(--ink) !important; }
+.docket-grid .cell-number { font-weight: 600; font-size: 12px; }
+.docket-grid .cell-money { font-size: 12px; }
+.docket-grid .cell-total { font-weight: 700; }
+.docket-grid .ag-floating-filter-input input, .docket-grid .ag-floating-filter input { min-height: 24px; font-size: 11px; }
+.cell-buyer { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.cell-buyer > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rolled-tag { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border-radius: 2px; background: var(--accent); color: #fffefa; }
+.rolled-tag::after { content: "BACKUP"; font: 700 8px var(--font-numeric); letter-spacing: .08em; }
+.backup-pill { min-width: 22px; padding: 2px 7px; border-radius: 999px; background: #f7ead4; color: #7a4a0c; font: 700 11px var(--font-numeric); text-align: center; }
+.backup-zero { color: #b3ada3; font: 11px var(--font-numeric); }
+.docket-grid .row-rolled { box-shadow: inset 3px 0 0 var(--accent); }
+.docket-grid .row-due-soon .ag-cell[col-id="due"] { background: #fbecea; }
+.docket-grid .row-actions button { font-weight: 600; }
+.docket-grid .on-paypal { font-size: 10px; }
+.grid-hint { margin: 8px 0 0; color: var(--secondary); font-size: 10.5px; }
+.grid-empty { color: var(--secondary); font-size: 12px; }
+@media (max-width: 1000px) { .docket-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .docket-kpis > div:nth-child(4) { border-left: 0; } .docket-kpis > div:nth-child(n + 4) { border-top: 1px solid var(--rule); } }
+@media (max-width: 700px) {
+  .docket-kpis { grid-template-columns: 1fr 1fr; }
+  .docket-kpis .kpi-lead { grid-column: 1 / -1; }
+  .docket-kpis > div { padding: 10px 12px; }
+  .docket-kpis > div:nth-child(n) { border-left: 0; border-top: 1px solid var(--rule); }
+  .docket-kpis > div:nth-child(2n + 3) { border-left: 1px solid var(--rule); }
+  .docket-kpis > div:first-child { border-top: 0; }
+  .docket-kpis dd { font-size: 17px; }
+  .docket-toolbar-tools { width: 100%; }
+  .docket-toolbar .quick-filter { flex: 1; }
+  .docket-toolbar .quick-filter input { width: 100%; }
+  .docket-filters { flex-wrap: nowrap; overflow-x: auto; margin-inline: -12px; padding-inline: 12px; scrollbar-width: none; }
+  .filter-chip { flex: none; }
+  .docket-grid { position: relative; }
+  .grid-hint::before { content: "Swipe the register sideways for claim and invoice columns. "; color: var(--ink); font-weight: 600; }
+}
+
+/* ---------- Rollover moment in the timeline ---------- */
+.timeline li.timeline-rollover { align-items: start; }
+.timeline-rollover .timeline-mark { color: var(--accent); }
+.rollover-card { display: grid; gap: 5px; padding: 9px 11px 10px; border: 1px solid #e3b3ae; border-left: 3px solid var(--accent); background: #fdf3f1; }
+.rollover-label { color: var(--accent); font: 700 9px var(--font-numeric); letter-spacing: .14em; }
+.rollover-card .timeline-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 4px; }
+.rollover-card .timeline-line svg { flex: none; align-self: center; margin-right: 3px; }
+.rollover-out { color: #8f1f18; }
+.rollover-in { color: var(--green); font-weight: 600; }
+.rollover-in .paypal-ref { color: var(--green); }
+@media (max-width: 700px) { .timeline li { grid-template-columns: 20px minmax(0, 1fr); } .timeline li > small { grid-column: 2; } .timeline li > .timeline-line, .timeline li > .rollover-card { grid-column: 2; } }
+
+/* ---------- Invoice list ---------- */
+.invoice-line { grid-template-columns: minmax(0, 1fr) auto auto 18px; padding: 8px 0; row-gap: 3px; }
+.invoice-line > .on-paypal, .invoice-line > .deposit-note { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
