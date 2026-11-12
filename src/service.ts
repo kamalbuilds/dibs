@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { calculateCart, depositCents, feeLineTitle, groupByBuyer, invoiceTransition, resolveClaims, resolveItemRef, type InvoiceStatus, type ShippingRules } from "./domain.js";
 import {
-  addClaim, addEvent, addItem, addOperation, addShipment, buyerClaims, closeSale, createInvoice, createSale, deleteItem, getInvoice, getInvoiceByPayPal,
+  addClaim, addEvent, hasInvoiceEvent, addItem, addOperation, addShipment, buyerClaims, closeSale, createInvoice, createSale, deleteItem, getInvoice, getInvoiceByPayPal,
   getItem, getSaleById, getSaleBySlug, invoiceItems, listClaims, listEvents, listInvoices, listItemClaims, listItems, listOutstandingInvoices,
   listDraftInvoices, listSalesToClose, matchesOwnerKey, markInvoiceCancelled, markInvoiceHeld, markInvoicePaid, nextBackup, nextClaimSequence, publishSale, unbilledClaimCount, unclaimedItems, updateInvoice,
   archiveSale, setSaleCloses, setItemComps, setItemPhoto, updateItem, updateItemStatus, updateOperation, type ClaimRow, type EventRow, type InvoiceRow, type ItemRow, type SaleRow,
@@ -247,7 +247,8 @@ export async function finishInvoice(invoiceId: string): Promise<InvoiceRow> {
       updateInvoice(invoice.id, { payer_url: sent.payerUrl });
     } else updateInvoice(invoice.id, { status: sent.status, payer_url: sent.payerUrl });
     invoice = getInvoice(invoice.id)!;
-    event(sale.id, "invoice_sent", { invoiceId: invoice.id, paypalInvoiceId: sent.id, status: sent.status, payerUrl: sent.payerUrl, totalCents: invoice.total_cents });
+    // The claim path and the reconciler DRAFT sweep can both finish one invoice; record the send once.
+    if (!hasInvoiceEvent(sale.id, "invoice_sent", invoice.id)) event(sale.id, "invoice_sent", { invoiceId: invoice.id, paypalInvoiceId: sent.id, status: sent.status, payerUrl: sent.payerUrl, totalCents: invoice.total_cents });
     return invoice;
   } catch (error) {
     event(invoice.sale_id, "invoice_failed", { invoiceId: invoice.id, message: error instanceof Error ? error.message : "PayPal invoice operation failed" });

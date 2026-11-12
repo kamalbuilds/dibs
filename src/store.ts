@@ -276,8 +276,14 @@ export function addEvent(saleId: string, type: string, payload: unknown, itemId:
   return event;
 }
 
+// invoice_sent is once per invoice; older data can hold a duplicate from a send that raced the reconciler, so keep only the first.
 export function listEvents(saleId: string): EventRow[] {
-  return db.prepare("SELECT * FROM events WHERE sale_id=? ORDER BY at_ms,id").all(saleId) as unknown as EventRow[];
+  return db.prepare(`SELECT * FROM events e WHERE sale_id=? AND NOT (type='invoice_sent' AND EXISTS (SELECT 1 FROM events d WHERE d.sale_id=e.sale_id AND d.type=e.type
+    AND json_extract(d.payload,'$.invoiceId')=json_extract(e.payload,'$.invoiceId') AND (d.at_ms<e.at_ms OR (d.at_ms=e.at_ms AND d.id<e.id)))) ORDER BY at_ms,id`).all(saleId) as unknown as EventRow[];
+}
+
+export function hasInvoiceEvent(saleId: string, type: string, invoiceId: string): boolean {
+  return !!db.prepare("SELECT 1 FROM events WHERE sale_id=? AND type=? AND json_extract(payload,'$.invoiceId')=? LIMIT 1").get(saleId, type, invoiceId);
 }
 
 export function createInvoice(input: Omit<InvoiceRow, "id" | "created_at_ms">, claims: Array<{ itemId: string; claimId: string }>): InvoiceRow {
