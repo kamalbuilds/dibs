@@ -43,7 +43,7 @@ export function publicSale(slug: string) {
   const items = listItems(sale.id).map((item) => ({
     id: item.id, number: item.number, title: item.title, setOrPlatform: item.set_or_platform,
     conditionNotes: item.condition_notes, priceCents: item.price_cents, status: item.status,
-    backupCount: unbilledClaimCount(item.id),
+    backupCount: Math.max(0, unbilledClaimCount(item.id) - (item.status === "CLAIMED" ? 1 : 0)),
   }));
   return { id: sale.id, slug: sale.slug, title: sale.title, status: sale.status, closesAtMs: sale.closes_at_ms, items, updatedAtMs: Date.now() };
 }
